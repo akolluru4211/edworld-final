@@ -2,6 +2,7 @@ import React from 'react';
 import { Routes, Route, Navigate } from 'react-router-dom';
 import Navbar from './components/common/Navbar';
 import Footer from './components/common/Footer';
+import MobileBottomNav from './components/common/MobileBottomNav';
 import ProtectedRoute from './components/common/ProtectedRoute';
 import AdminRoute from './components/common/AdminRoute';
 
@@ -64,6 +65,7 @@ export default function App() {
         </Routes>
       </main>
       <Footer />
+      <MobileBottomNav />
     </div>
   );
 }

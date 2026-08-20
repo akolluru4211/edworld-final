@@ -11,7 +11,10 @@ import {
   Copy, 
   ArrowRight,
   Code,
-  Download
+  Download,
+  Eye,
+  Edit3,
+  Bot
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { useNotification } from '../context/NotificationContext';
@@ -29,6 +32,10 @@ export default function ResumeStudioPage() {
   const [resumes, setResumes] = useState([]);
   const [selectedResume, setSelectedResume] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+
+  // Mobile Workspace Tab ('edit' | 'preview' | 'ai')
+  const [activeTab, setActiveTab] = useState('edit');
 
   // Resume Form Data
   const [title, setTitle] = useState('Full Stack Engineer Resume');
@@ -42,6 +49,7 @@ export default function ResumeStudioPage() {
   // JD Analyzer state
   const [jobDescription, setJobDescription] = useState('');
   const [analysisResult, setAnalysisResult] = useState(null);
+  const [analyzing, setAnalyzing] = useState(false);
 
   // Bullet point enhancer state
   const [rawBullet, setRawBullet] = useState('');
@@ -98,354 +106,344 @@ export default function ResumeStudioPage() {
 
   const handleSave = async () => {
     if (!user) return;
-    const payload = {
-      id: selectedResume?.id || `res-${Date.now()}`,
-      userId: user.uid,
-      title,
-      targetRole,
-      summary,
-      experienceText,
-      skillsText,
-      projectsText,
-      educationText,
-      matchScore: analysisResult?.matchScore || 85
-    };
-
+    setSaving(true);
     try {
-      await saveResume(payload);
-      setSelectedResume(payload);
-      setResumes(prev => {
-        const existing = prev.find(r => r.id === payload.id);
-        if (existing) return prev.map(r => r.id === payload.id ? payload : r);
-        return [payload, ...prev];
-      });
-      showToast('ATS Resume saved and updated! 📄');
+      const resumeData = {
+        title,
+        targetRole,
+        summary,
+        experienceText,
+        skillsText,
+        projectsText,
+        educationText,
+        updatedAt: new Date().toISOString()
+      };
+      const res = await saveResume(user.uid, resumeData, selectedResume?.id !== 'master-resume' ? selectedResume?.id : null);
+      setSelectedResume({ ...resumeData, id: res.id });
+      showToast('Resume saved successfully!');
     } catch (err) {
       showToast('Failed to save resume', 'error');
+    } finally {
+      setSaving(false);
     }
   };
 
-  const handleRunJdAnalysis = () => {
-    const fullResumeText = `${summary} ${experienceText} ${skillsText} ${projectsText} ${educationText}`;
-    const skillsList = skillsText.split(',').map(s => s.trim()).filter(Boolean);
-    const result = analyzeResumeAgainstJob(fullResumeText, jobDescription, skillsList);
+  const handleAnalyzeJD = () => {
+    if (!jobDescription.trim()) {
+      showToast('Please paste a Job Description to analyze.', 'warning');
+      return;
+    }
+    setAnalyzing(true);
+    const resumeText = `${summary} ${experienceText} ${projectsText} ${skillsText}`;
+    const result = analyzeResumeAgainstJob(resumeText, jobDescription);
     setAnalysisResult(result);
-    showToast(`JD Analysis complete! ATS Match Score: ${result.matchScore}%`, 'success');
+    setAnalyzing(false);
+    showToast(`ATS Match Score: ${result.matchScore}% 🎯`);
   };
 
   const handleEnhanceBullet = () => {
     if (!rawBullet.trim()) return;
     const enhanced = enhanceResumeBullet(rawBullet);
     setEnhancedBullet(enhanced);
+    showToast('Bullet point enhanced with action verbs & metrics!');
   };
 
   const handlePrint = () => {
     window.print();
   };
 
-  const handleCreateNew = () => {
-    const newR = {
-      id: `res-${Date.now()}`,
-      userId: user.uid,
-      title: `Customized Resume (${targetRole})`,
-      targetRole: targetRole,
-      summary: summary,
-      experienceText: experienceText,
-      skillsText: skillsText,
-      projectsText: projectsText,
-      educationText: educationText,
-      matchScore: 82
-    };
-    setSelectedResume(newR);
-    setResumes(prev => [newR, ...prev]);
-    showToast('New resume version created.');
-  };
-
   return (
-    <div className="resume-studio-page">
-      {/* 1. HEADER (HIDDEN IN PRINT) */}
-      <div className="hero-banner no-print" style={{ padding: '36px 32px', marginBottom: '28px' }}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '20px' }}>
+    <div className="resume-page" style={{ paddingBottom: '70px' }}>
+      {/* 1. HEADER (HIDDEN ON PRINT) */}
+      <div className="glass-card no-print" style={{ padding: '24px', marginBottom: '20px', background: 'linear-gradient(135deg, rgba(18, 26, 44, 0.95) 0%, rgba(15, 23, 42, 0.95) 100%)' }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '14px' }}>
           <div>
-            <div style={{ display: 'inline-flex', alignItems: 'center', gap: '8px', background: 'rgba(16, 185, 129, 0.18)', border: '1px solid rgba(16, 185, 129, 0.35)', padding: '4px 12px', borderRadius: 'var(--radius-full)', marginBottom: '10px' }}>
-              <FileText size={14} color="var(--emerald)" />
-              <span style={{ fontSize: '0.78rem', fontWeight: '800', color: '#6ee7b7', textTransform: 'uppercase' }}>
-                ATS Intelligence Studio
+            <div style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', background: 'rgba(16, 185, 129, 0.18)', border: '1px solid rgba(16, 185, 129, 0.35)', padding: '4px 10px', borderRadius: 'var(--radius-full)', marginBottom: '8px' }}>
+              <FileText size={13} color="var(--emerald)" />
+              <span style={{ fontSize: '0.75rem', fontWeight: '800', color: '#6ee7b7', textTransform: 'uppercase' }}>
+                ATS Resume Studio
               </span>
             </div>
-            <h1 style={{ fontSize: '2.2rem', fontWeight: '800', marginBottom: '6px' }}>
-              Resume Studio
+            <h1 style={{ fontSize: '1.8rem', fontWeight: '800', marginBottom: '4px' }}>
+              Recruiter-Ready Resume Studio
             </h1>
-            <p style={{ color: 'var(--text-muted)', fontSize: '0.95rem', maxWidth: '640px' }}>
-              Tailor ATS-compliant resumes with keyword density matching and Google XYZ formula bullet enhancements.
+            <p style={{ color: 'var(--text-muted)', fontSize: '0.88rem', margin: 0 }}>
+              Live ATS keyword matching, AI bullet enhancer, and PDF export.
             </p>
           </div>
 
-          <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
-            <button onClick={handleCreateNew} className="btn btn-secondary btn-sm">
-              <Plus size={14} /> New Version
+          <div style={{ display: 'flex', gap: '10px' }}>
+            <button onClick={handleSave} disabled={saving} className="btn btn-secondary btn-sm" style={{ padding: '8px 14px' }}>
+              <Save size={14} /> {saving ? 'Saving...' : 'Save'}
             </button>
-            <button onClick={handleSave} className="btn btn-secondary btn-sm">
-              <Save size={14} /> Save Resume
-            </button>
-            <button onClick={handlePrint} className="btn btn-primary btn-sm">
+            <button onClick={handlePrint} className="btn btn-primary btn-sm" style={{ padding: '8px 14px' }}>
               <Printer size={14} /> Print / Export PDF
             </button>
           </div>
         </div>
       </div>
 
-      {/* 2. JD ANALYZER ACCORDION (NO PRINT) */}
-      <div className="glass-card no-print" style={{ marginBottom: '28px' }}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '14px' }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-            <Sparkles size={18} color="var(--secondary)" />
-            <h3 style={{ fontSize: '1.1rem', fontWeight: '700' }}>Job Description (JD) Keyword Matcher</h3>
-          </div>
-          {analysisResult && (
-            <span className="badge badge-emerald" style={{ fontSize: '0.85rem' }}>
-              {analysisResult.matchScore}% Match
-            </span>
-          )}
-        </div>
-
-        <div style={{ display: 'flex', gap: '12px', marginBottom: '14px' }}>
-          <textarea 
-            className="textarea-field" 
-            rows={3}
-            placeholder="Paste target Job Description (JD) here to calculate keyword match density..."
-            value={jobDescription}
-            onChange={(e) => setJobDescription(e.target.value)}
-          />
-        </div>
-
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-          <button onClick={handleRunJdAnalysis} className="btn btn-primary btn-sm">
-            <Sparkles size={14} /> Analyze Match & Missing Keywords
+      {/* 2. MOBILE TAB SELECTOR (HIDDEN ON DESKTOP & PRINT) */}
+      <div className="no-print" style={{ marginBottom: '18px' }}>
+        <div className="segment-tabs-container">
+          <button
+            onClick={() => setActiveTab('edit')}
+            className={`segment-tab-btn ${activeTab === 'edit' ? 'active' : ''}`}
+          >
+            <Edit3 size={15} /> Resume Data
+          </button>
+          <button
+            onClick={() => setActiveTab('preview')}
+            className={`segment-tab-btn ${activeTab === 'preview' ? 'active' : ''}`}
+          >
+            <Eye size={15} /> Live Preview
+          </button>
+          <button
+            onClick={() => setActiveTab('ai')}
+            className={`segment-tab-btn ${activeTab === 'ai' ? 'active' : ''}`}
+          >
+            <Bot size={15} /> AI ATS Matcher
           </button>
         </div>
-
-        {/* Analysis Output */}
-        {analysisResult && (
-          <div style={{ marginTop: '16px', background: 'rgba(0,0,0,0.3)', padding: '16px', borderRadius: '10px', border: '1px solid var(--border-subtle)' }}>
-            <div className="grid-2-even" style={{ gap: '16px', marginBottom: '12px' }}>
-              <div>
-                <span style={{ fontSize: '0.78rem', color: 'var(--emerald)', fontWeight: '700', textTransform: 'uppercase' }}>
-                  ✓ Matched Keywords ({analysisResult.matchedKeywords.length})
-                </span>
-                <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap', marginTop: '6px' }}>
-                  {analysisResult.matchedKeywords.map((kw, i) => (
-                    <span key={i} className="badge badge-emerald" style={{ fontSize: '0.7rem' }}>{kw}</span>
-                  ))}
-                </div>
-              </div>
-
-              <div>
-                <span style={{ fontSize: '0.78rem', color: 'var(--amber)', fontWeight: '700', textTransform: 'uppercase' }}>
-                  ⚠️ Missing JD Keywords ({analysisResult.missingKeywords.length})
-                </span>
-                <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap', marginTop: '6px' }}>
-                  {analysisResult.missingKeywords.map((kw, i) => (
-                    <span key={i} className="badge badge-amber" style={{ fontSize: '0.7rem' }}>{kw}</span>
-                  ))}
-                </div>
-              </div>
-            </div>
-
-            <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>
-              <strong>ATS Tips:</strong> {analysisResult.atsSuggestions.join(' · ')}
-            </div>
-          </div>
-        )}
       </div>
 
-      {/* 3. MAIN RESUME WORKSPACE (2 COLS IN APP, FULL IN PRINT) */}
-      <div className="grid-2">
-        {/* Left Column: Form Editor (no-print) */}
-        <div className="glass-card no-print">
-          <h3 style={{ fontSize: '1.2rem', fontWeight: '800', marginBottom: '16px', borderBottom: '1px solid var(--border-subtle)', paddingBottom: '10px' }}>
-            Resume Content Editor
-          </h3>
-
-          <div className="form-group">
-            <label className="form-label">Resume Title</label>
-            <input 
-              type="text" 
-              className="input-field" 
-              value={title} 
-              onChange={(e) => setTitle(e.target.value)} 
-            />
-          </div>
-
-          <div className="form-group">
-            <label className="form-label">Target Role Headline</label>
-            <input 
-              type="text" 
-              className="input-field" 
-              value={targetRole} 
-              onChange={(e) => setTargetRole(e.target.value)} 
-            />
-          </div>
-
-          <div className="form-group">
-            <label className="form-label">Professional Summary</label>
-            <textarea 
-              className="textarea-field" 
-              rows={3} 
-              value={summary} 
-              onChange={(e) => setSummary(e.target.value)} 
-            />
-          </div>
-
-          <div className="form-group">
-            <label className="form-label">Technical Skills (comma separated)</label>
-            <textarea 
-              className="textarea-field" 
-              rows={2} 
-              value={skillsText} 
-              onChange={(e) => setSkillsText(e.target.value)} 
-            />
-          </div>
-
-          <div className="form-group">
-            <label className="form-label">Work Experience & Fellowships</label>
-            <textarea 
-              className="textarea-field" 
-              rows={5} 
-              value={experienceText} 
-              onChange={(e) => setExperienceText(e.target.value)} 
-            />
-          </div>
-
-          <div className="form-group">
-            <label className="form-label">Featured Projects</label>
-            <textarea 
-              className="textarea-field" 
-              rows={5} 
-              value={projectsText} 
-              onChange={(e) => setProjectsText(e.target.value)} 
-            />
-          </div>
-
-          <div className="form-group">
-            <label className="form-label">Education</label>
-            <textarea 
-              className="textarea-field" 
-              rows={3} 
-              value={educationText} 
-              onChange={(e) => setEducationText(e.target.value)} 
-            />
-          </div>
-
-          {/* AI Bullet Enhancer Tool */}
-          <div style={{ background: 'rgba(255,255,255,0.03)', padding: '16px', borderRadius: '10px', border: '1px solid var(--border-subtle)', marginTop: '20px' }}>
-            <span style={{ fontSize: '0.82rem', fontWeight: '700', color: 'var(--secondary)', textTransform: 'uppercase' }}>
-              ✨ Google XYZ Bullet Enhancer
-            </span>
-            <div style={{ display: 'flex', gap: '8px', marginTop: '8px', marginBottom: '8px' }}>
+      {/* 3. MAIN WORKSPACE */}
+      <div className="responsive-grid-2">
+        
+        {/* LEFT COLUMN: RESUME DATA EDITOR (Visible on 'edit' on mobile, always on desktop) */}
+        <div className={activeTab !== 'edit' ? 'hide-on-mobile' : ''} style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+          <div className="glass-card" style={{ padding: '20px' }}>
+            <h3 style={{ fontSize: '1.05rem', fontWeight: '700', marginBottom: '14px', borderBottom: '1px solid var(--border-subtle)', paddingBottom: '8px' }}>
+              Resume Header & Target
+            </h3>
+            <div className="form-group">
+              <label className="form-label">Resume Title</label>
               <input 
                 type="text" 
                 className="input-field" 
-                placeholder="Paste weak bullet: 'built react app with node'..."
+                value={title} 
+                onChange={(e) => setTitle(e.target.value)} 
+              />
+            </div>
+            <div className="form-group">
+              <label className="form-label">Target Role</label>
+              <input 
+                type="text" 
+                className="input-field" 
+                value={targetRole} 
+                onChange={(e) => setTargetRole(e.target.value)} 
+              />
+            </div>
+            <div className="form-group">
+              <label className="form-label">Executive Summary</label>
+              <textarea 
+                className="input-field" 
+                rows="3" 
+                value={summary} 
+                onChange={(e) => setSummary(e.target.value)} 
+              />
+            </div>
+          </div>
+
+          <div className="glass-card" style={{ padding: '20px' }}>
+            <h3 style={{ fontSize: '1.05rem', fontWeight: '700', marginBottom: '14px', borderBottom: '1px solid var(--border-subtle)', paddingBottom: '8px' }}>
+              Experience & Projects
+            </h3>
+            <div className="form-group">
+              <label className="form-label">Work Experience</label>
+              <textarea 
+                className="input-field" 
+                rows="4" 
+                value={experienceText} 
+                onChange={(e) => setExperienceText(e.target.value)} 
+              />
+            </div>
+            <div className="form-group">
+              <label className="form-label">Key Projects</label>
+              <textarea 
+                className="input-field" 
+                rows="4" 
+                value={projectsText} 
+                onChange={(e) => setProjectsText(e.target.value)} 
+              />
+            </div>
+          </div>
+
+          <div className="glass-card" style={{ padding: '20px' }}>
+            <h3 style={{ fontSize: '1.05rem', fontWeight: '700', marginBottom: '14px', borderBottom: '1px solid var(--border-subtle)', paddingBottom: '8px' }}>
+              Technical Skills & Education
+            </h3>
+            <div className="form-group">
+              <label className="form-label">Skills (Comma-separated)</label>
+              <textarea 
+                className="input-field" 
+                rows="2" 
+                value={skillsText} 
+                onChange={(e) => setSkillsText(e.target.value)} 
+              />
+            </div>
+            <div className="form-group">
+              <label className="form-label">Education</label>
+              <textarea 
+                className="input-field" 
+                rows="3" 
+                value={educationText} 
+                onChange={(e) => setEducationText(e.target.value)} 
+              />
+            </div>
+          </div>
+        </div>
+
+        {/* RIGHT COLUMN / PREVIEW & AI */}
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+          
+          {/* AI ATS MATCHING PANEL (Visible on 'ai' tab on mobile) */}
+          <div className={activeTab !== 'ai' ? 'hide-on-mobile' : ''}>
+            <div className="glass-card" style={{ padding: '20px', marginBottom: '16px' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '12px' }}>
+                <Sparkles size={18} color="var(--primary)" />
+                <h3 style={{ fontSize: '1.05rem', fontWeight: '700', margin: 0 }}>ATS Job Description Matcher</h3>
+              </div>
+              <textarea 
+                className="input-field" 
+                rows="4" 
+                placeholder="Paste target job description here to check ATS match..."
+                value={jobDescription} 
+                onChange={(e) => setJobDescription(e.target.value)} 
+              />
+              <button 
+                onClick={handleAnalyzeJD} 
+                disabled={analyzing} 
+                className="btn btn-primary btn-sm" 
+                style={{ width: '100%', marginTop: '10px', justifyContent: 'center' }}
+              >
+                {analyzing ? 'Analyzing JD Keywords...' : 'Calculate ATS Match Score'}
+              </button>
+
+              {analysisResult && (
+                <div style={{ marginTop: '16px', background: 'rgba(255,255,255,0.03)', padding: '14px', borderRadius: 'var(--radius-sm)' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
+                    <span style={{ fontWeight: '700', fontSize: '0.88rem' }}>ATS Match:</span>
+                    <span className="badge badge-emerald" style={{ fontSize: '0.85rem' }}>{analysisResult.matchScore}% Match</span>
+                  </div>
+                  {analysisResult.missingKeywords?.length > 0 && (
+                    <div>
+                      <div style={{ fontSize: '0.75rem', color: 'var(--rose)', marginBottom: '4px' }}>Recommended Keywords to Add:</div>
+                      <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px' }}>
+                        {analysisResult.missingKeywords.map((k, i) => (
+                          <span key={i} className="badge badge-rose" style={{ fontSize: '0.68rem' }}>+ {k}</span>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+
+            {/* Bullet Enhancer */}
+            <div className="glass-card" style={{ padding: '20px' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '12px' }}>
+                <Code size={18} color="var(--secondary)" />
+                <h3 style={{ fontSize: '1.05rem', fontWeight: '700', margin: 0 }}>AI Bullet Point Enhancer</h3>
+              </div>
+              <input 
+                type="text" 
+                className="input-field" 
+                placeholder="e.g. built api in nodejs"
                 value={rawBullet}
                 onChange={(e) => setRawBullet(e.target.value)}
               />
-              <button onClick={handleEnhanceBullet} className="btn btn-secondary btn-sm">
-                Enhance
+              <button onClick={handleEnhanceBullet} className="btn btn-secondary btn-sm" style={{ width: '100%', marginTop: '10px', justifyContent: 'center' }}>
+                Enhance with Metrics & Action Verbs
               </button>
-            </div>
-            {enhancedBullet && (
-              <div style={{ background: 'rgba(0,0,0,0.4)', padding: '10px 12px', borderRadius: '8px', fontSize: '0.85rem', color: 'var(--emerald)' }}>
-                {enhancedBullet}
-              </div>
-            )}
-          </div>
-        </div>
-
-        {/* Right Column: Live Clean ATS Resume Preview (Printable) */}
-        <div style={{
-          background: '#ffffff',
-          color: '#111827',
-          padding: '40px',
-          borderRadius: 'var(--radius-lg)',
-          boxShadow: '0 10px 40px rgba(0,0,0,0.5)',
-          fontFamily: 'var(--font-sans)',
-          minHeight: '800px',
-          lineHeight: '1.5'
-        }}>
-          {/* Resume Header */}
-          <div style={{ textAlign: 'center', borderBottom: '2px solid #111827', paddingBottom: '16px', marginBottom: '20px' }}>
-            <h1 style={{ fontSize: '1.8rem', fontWeight: '800', textTransform: 'uppercase', letterSpacing: '0.04em', margin: 0, color: '#111827' }}>
-              {userProfile?.displayName || 'Developer Name'}
-            </h1>
-            <div style={{ fontSize: '1rem', fontWeight: '600', color: '#4f46e5', marginTop: '4px' }}>
-              {targetRole}
-            </div>
-            <div style={{ fontSize: '0.85rem', color: '#4b5563', marginTop: '4px' }}>
-              {userProfile?.email} · {userProfile?.location || 'Remote, Worldwide'} · edworld.co.in/u/{userProfile?.username || 'user'}
+              {enhancedBullet && (
+                <div style={{ marginTop: '12px', background: 'rgba(6, 182, 212, 0.1)', border: '1px solid rgba(6, 182, 212, 0.3)', padding: '12px', borderRadius: 'var(--radius-sm)', fontSize: '0.85rem' }}>
+                  <div style={{ fontSize: '0.72rem', color: 'var(--secondary)', fontWeight: '700', marginBottom: '4px' }}>ENHANCED BULLET:</div>
+                  <div>{enhancedBullet}</div>
+                </div>
+              )}
             </div>
           </div>
 
-          {/* Summary */}
-          {summary && (
-            <div style={{ marginBottom: '18px' }}>
-              <h2 style={{ fontSize: '0.95rem', fontWeight: '800', textTransform: 'uppercase', borderBottom: '1px solid #e5e7eb', paddingBottom: '3px', marginBottom: '6px', color: '#111827' }}>
-                Professional Summary
-              </h2>
-              <p style={{ fontSize: '0.88rem', color: '#374151' }}>
-                {summary}
-              </p>
-            </div>
-          )}
-
-          {/* Technical Skills */}
-          {skillsText && (
-            <div style={{ marginBottom: '18px' }}>
-              <h2 style={{ fontSize: '0.95rem', fontWeight: '800', textTransform: 'uppercase', borderBottom: '1px solid #e5e7eb', paddingBottom: '3px', marginBottom: '6px', color: '#111827' }}>
-                Technical Skills
-              </h2>
-              <p style={{ fontSize: '0.88rem', color: '#374151' }}>
-                {skillsText}
-              </p>
-            </div>
-          )}
-
-          {/* Experience */}
-          {experienceText && (
-            <div style={{ marginBottom: '18px' }}>
-              <h2 style={{ fontSize: '0.95rem', fontWeight: '800', textTransform: 'uppercase', borderBottom: '1px solid #e5e7eb', paddingBottom: '3px', marginBottom: '6px', color: '#111827' }}>
-                Experience & Fellowships
-              </h2>
-              <div style={{ fontSize: '0.88rem', color: '#374151', whiteSpace: 'pre-line' }}>
-                {experienceText}
+          {/* LIVE ATS RESUME PREVIEW (Visible on 'preview' on mobile, always on desktop) */}
+          <div className={activeTab !== 'preview' ? 'hide-on-mobile' : ''}>
+            <div style={{
+              background: '#ffffff',
+              color: '#0f172a',
+              borderRadius: '8px',
+              padding: '32px 28px',
+              fontFamily: 'Arial, Helvetica, sans-serif',
+              fontSize: '0.85rem',
+              lineHeight: '1.5',
+              boxShadow: '0 8px 30px rgba(0,0,0,0.6)'
+            }}>
+              {/* Resume Header */}
+              <div style={{ textAlign: 'center', borderBottom: '2px solid #0f172a', paddingBottom: '12px', marginBottom: '16px' }}>
+                <h2 style={{ fontSize: '1.5rem', fontWeight: '800', margin: 0, textTransform: 'uppercase', letterSpacing: '0.05em', color: '#0f172a' }}>
+                  {userProfile?.displayName || 'DEVELOPER NAME'}
+                </h2>
+                <div style={{ fontSize: '0.9rem', fontWeight: '700', color: '#4338ca', marginTop: '2px' }}>
+                  {targetRole}
+                </div>
+                <div style={{ fontSize: '0.75rem', color: '#475569', marginTop: '4px' }}>
+                  {userProfile?.email || 'email@example.com'} • {userProfile?.college || 'Institution'} • @{userProfile?.username || 'user'}
+                </div>
               </div>
-            </div>
-          )}
 
-          {/* Featured Projects */}
-          {projectsText && (
-            <div style={{ marginBottom: '18px' }}>
-              <h2 style={{ fontSize: '0.95rem', fontWeight: '800', textTransform: 'uppercase', borderBottom: '1px solid #e5e7eb', paddingBottom: '3px', marginBottom: '6px', color: '#111827' }}>
-                Engineering Projects
-              </h2>
-              <div style={{ fontSize: '0.88rem', color: '#374151', whiteSpace: 'pre-line' }}>
-                {projectsText}
-              </div>
-            </div>
-          )}
+              {/* Summary */}
+              {summary && (
+                <div style={{ marginBottom: '16px' }}>
+                  <div style={{ fontSize: '0.8rem', fontWeight: '800', textTransform: 'uppercase', borderBottom: '1px solid #cbd5e1', paddingBottom: '2px', marginBottom: '6px', color: '#0f172a' }}>
+                    Professional Summary
+                  </div>
+                  <p style={{ margin: 0, fontSize: '0.82rem', color: '#334155' }}>{summary}</p>
+                </div>
+              )}
 
-          {/* Education */}
-          {educationText && (
-            <div style={{ marginBottom: '18px' }}>
-              <h2 style={{ fontSize: '0.95rem', fontWeight: '800', textTransform: 'uppercase', borderBottom: '1px solid #e5e7eb', paddingBottom: '3px', marginBottom: '6px', color: '#111827' }}>
-                Education
-              </h2>
-              <div style={{ fontSize: '0.88rem', color: '#374151', whiteSpace: 'pre-line' }}>
-                {educationText}
-              </div>
+              {/* Technical Skills */}
+              {skillsText && (
+                <div style={{ marginBottom: '16px' }}>
+                  <div style={{ fontSize: '0.8rem', fontWeight: '800', textTransform: 'uppercase', borderBottom: '1px solid #cbd5e1', paddingBottom: '2px', marginBottom: '6px', color: '#0f172a' }}>
+                    Technical Skills Matrix
+                  </div>
+                  <p style={{ margin: 0, fontSize: '0.82rem', color: '#334155' }}>{skillsText}</p>
+                </div>
+              )}
+
+              {/* Work Experience */}
+              {experienceText && (
+                <div style={{ marginBottom: '16px' }}>
+                  <div style={{ fontSize: '0.8rem', fontWeight: '800', textTransform: 'uppercase', borderBottom: '1px solid #cbd5e1', paddingBottom: '2px', marginBottom: '6px', color: '#0f172a' }}>
+                    Experience & Contributions
+                  </div>
+                  <div style={{ whiteSpace: 'pre-line', fontSize: '0.82rem', color: '#334155' }}>{experienceText}</div>
+                </div>
+              )}
+
+              {/* Projects */}
+              {projectsText && (
+                <div style={{ marginBottom: '16px' }}>
+                  <div style={{ fontSize: '0.8rem', fontWeight: '800', textTransform: 'uppercase', borderBottom: '1px solid #cbd5e1', paddingBottom: '2px', marginBottom: '6px', color: '#0f172a' }}>
+                    Proof of Work Projects
+                  </div>
+                  <div style={{ whiteSpace: 'pre-line', fontSize: '0.82rem', color: '#334155' }}>{projectsText}</div>
+                </div>
+              )}
+
+              {/* Education */}
+              {educationText && (
+                <div>
+                  <div style={{ fontSize: '0.8rem', fontWeight: '800', textTransform: 'uppercase', borderBottom: '1px solid #cbd5e1', paddingBottom: '2px', marginBottom: '6px', color: '#0f172a' }}>
+                    Education
+                  </div>
+                  <div style={{ whiteSpace: 'pre-line', fontSize: '0.82rem', color: '#334155' }}>{educationText}</div>
+                </div>
+              )}
             </div>
-          )}
+          </div>
+
         </div>
+
       </div>
     </div>
   );

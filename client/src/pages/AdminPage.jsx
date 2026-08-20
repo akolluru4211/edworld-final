@@ -207,7 +207,7 @@ export default function AdminPage() {
       {/* 2. ANALYTICS METRICS */}
       {activeTab === 'analytics' && (
         <div>
-          <div className="grid-4" style={{ marginBottom: '28px' }}>
+          <div className="responsive-grid-4" style={{ marginBottom: '28px' }}>
             <div className="glass-card">
               <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)', fontWeight: '700', textTransform: 'uppercase' }}>Registered Users</div>
               <div style={{ fontSize: '2rem', fontWeight: '800', color: 'var(--primary)', marginTop: '4px' }}>

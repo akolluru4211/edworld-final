@@ -16,7 +16,11 @@ import {
   Code, 
   FileCheck,
   UserCheck,
-  Zap
+  Zap,
+  ChevronDown,
+  ChevronUp,
+  X,
+  Layers
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { useNotification } from '../context/NotificationContext';
@@ -32,6 +36,8 @@ export default function CareerPage() {
   const [applications, setApplications] = useState([]);
   const [newSkillInput, setNewSkillInput] = useState('');
   const [showQrModal, setShowQrModal] = useState(false);
+  const [activeTab, setActiveTab] = useState('overview'); // 'overview' | 'skills' | 'projects' | 'credentials'
+  const [expandedSkill, setExpandedSkill] = useState(null);
 
   useEffect(() => {
     async function loadData() {
@@ -78,302 +84,325 @@ export default function CareerPage() {
 
   const handleSharePassport = () => {
     const url = `${window.location.origin}/u/${userProfile?.username || 'user'}`;
-    navigator.clipboard.writeText(url);
-    showToast('Public Career Passport URL copied to clipboard! 📋');
+    if (navigator.share) {
+      navigator.share({
+        title: `${userProfile?.displayName || 'Developer'} — EdWorld Career Passport`,
+        text: `Check out my verified developer passport and projects on EdWorld Co.`,
+        url
+      }).catch(() => {});
+    } else {
+      navigator.clipboard.writeText(url);
+      showToast('Public Career Passport URL copied to clipboard! 📋');
+    }
   };
 
   const handleDownloadPassport = () => {
     window.print();
   };
 
+  const passportUrl = `${window.location.origin}/u/${userProfile?.username || 'dev'}`;
+
   return (
     <div className="career-page">
       {/* 1. HERO HEADER */}
-      <div className="hero-banner" style={{ padding: '36px 32px', marginBottom: '32px' }}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '20px' }}>
+      <div className="glass-card" style={{ padding: '28px 24px', marginBottom: '24px', background: 'linear-gradient(135deg, rgba(18, 26, 44, 0.95) 0%, rgba(15, 23, 42, 0.95) 100%)' }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '16px' }}>
           <div>
-            <div style={{ display: 'inline-flex', alignItems: 'center', gap: '8px', background: 'rgba(99, 102, 241, 0.18)', border: '1px solid rgba(99, 102, 241, 0.35)', padding: '4px 12px', borderRadius: 'var(--radius-full)', marginBottom: '10px' }}>
+            <div style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', background: 'rgba(99, 102, 241, 0.18)', border: '1px solid rgba(99, 102, 241, 0.35)', padding: '4px 10px', borderRadius: 'var(--radius-full)', marginBottom: '8px' }}>
               <Compass size={14} color="var(--primary)" />
-              <span style={{ fontSize: '0.78rem', fontWeight: '800', color: '#a5b4fc', textTransform: 'uppercase' }}>
+              <span style={{ fontSize: '0.75rem', fontWeight: '800', color: '#a5b4fc', textTransform: 'uppercase' }}>
                 Career Identity OS
               </span>
             </div>
-            <h1 style={{ fontSize: '2.2rem', fontWeight: '800', marginBottom: '8px' }}>
-              Your Digital Career Passport
+            <h1 style={{ fontSize: '1.9rem', fontWeight: '800', marginBottom: '4px' }}>
+              {userProfile?.displayName || 'Developer'}'s Career Passport
             </h1>
-            <p style={{ color: 'var(--text-muted)', fontSize: '0.95rem', maxWidth: '640px' }}>
-              Unified verifiable identity combining proof of work, evidence-backed skill assessments, and continuous career readiness.
+            <p style={{ color: 'var(--text-muted)', fontSize: '0.9rem', maxWidth: '580px', margin: 0 }}>
+              Proof-backed verification, algorithmic readiness scoring, and skill intelligence matrix.
             </p>
           </div>
 
           <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
-            <button onClick={handleSharePassport} className="btn btn-secondary btn-sm">
-              <Share2 size={14} /> Share Passport
+            <button onClick={handleSharePassport} className="btn btn-secondary btn-sm" style={{ padding: '8px 14px' }}>
+              <Share2 size={14} /> Share
             </button>
-            <button onClick={handleDownloadPassport} className="btn btn-secondary btn-sm">
-              <Download size={14} /> Print / Export
+            <button onClick={() => setShowQrModal(true)} className="btn btn-secondary btn-sm" style={{ padding: '8px 14px' }}>
+              <QrCode size={14} /> QR Code
             </button>
-            <Link to={`/u/${userProfile?.username || 'user'}`} className="btn btn-primary btn-sm">
-              <ExternalLink size={14} /> View Public Profile
-            </Link>
+            <button onClick={handleDownloadPassport} className="btn btn-primary btn-sm" style={{ padding: '8px 14px' }}>
+              <Download size={14} /> PDF
+            </button>
           </div>
         </div>
       </div>
 
-      {/* 2. CAREER PASSPORT CARD + SCORE BREAKDOWN */}
-      <div className="grid-2" style={{ marginBottom: '36px' }}>
-        {/* Digital Career Passport Premium Card */}
-        <div className="glass-card" style={{
-          background: 'linear-gradient(135deg, rgba(18, 26, 44, 0.9) 0%, rgba(15, 23, 42, 0.95) 100%)',
-          border: '1px solid var(--border-glow)',
-          boxShadow: 'var(--shadow-glow), var(--shadow-card)',
-          position: 'relative',
-          overflow: 'hidden'
-        }}>
-          <div style={{
-            position: 'absolute',
-            top: '-60px',
-            right: '-60px',
-            width: '180px',
-            height: '180px',
-            background: 'radial-gradient(circle, var(--primary-glow) 0%, transparent 70%)',
-            pointerEvents: 'none'
-          }} />
+      {/* 2. HORIZONTAL SCROLL SEGMENT TABS (MOBILE & TABLET) */}
+      <div style={{ marginBottom: '20px' }}>
+        <div className="segment-tabs-container">
+          {[
+            { id: 'overview', label: 'Passport Overview' },
+            { id: 'skills', label: `Verified Skills (${userProfile?.skills?.length || 0})` },
+            { id: 'projects', label: `Projects (${projects.length})` },
+            { id: 'credentials', label: 'AI Readiness & Scoring' }
+          ].map(tab => (
+            <button
+              key={tab.id}
+              onClick={() => setActiveTab(tab.id)}
+              className={`segment-tab-btn ${activeTab === tab.id ? 'active' : ''}`}
+            >
+              {tab.label}
+            </button>
+          ))}
+        </div>
+      </div>
 
-          {/* Passport Header */}
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '24px', borderBottom: '1px solid var(--border-subtle)', paddingBottom: '16px' }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-              <div className="brand-logo-icon" style={{ width: '32px', height: '32px', fontSize: '1rem' }}>E</div>
-              <div>
-                <div style={{ fontSize: '0.9rem', fontWeight: '800' }}>EDWORLD CO. PASSPORT</div>
-                <div style={{ fontSize: '0.72rem', color: 'var(--text-dim)' }}>ID: {user?.uid?.slice(0, 12).toUpperCase()}</div>
+      {/* 3. TAB CONTENT */}
+
+      {/* TAB: OVERVIEW */}
+      {activeTab === 'overview' && (
+        <div className="responsive-grid-2">
+          {/* Left Column: Passport Identity Card */}
+          <div className="glass-card" style={{ padding: '24px', borderTop: '4px solid var(--primary)' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '16px', marginBottom: '20px' }}>
+              <img 
+                src={userProfile?.photoURL || `https://api.dicebear.com/7.x/bottts/svg?seed=${userProfile?.username || 'dev'}`} 
+                alt={userProfile?.displayName} 
+                style={{ width: '64px', height: '64px', borderRadius: '50%', border: '2px solid var(--primary)', flexShrink: 0 }}
+              />
+              <div style={{ minWidth: 0, flex: 1 }}>
+                <h2 style={{ fontSize: '1.25rem', fontWeight: '800', marginBottom: '2px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                  {userProfile?.displayName || 'Developer'}
+                </h2>
+                <div style={{ color: 'var(--secondary)', fontSize: '0.85rem', fontWeight: '700' }}>
+                  @{userProfile?.username || 'user'}
+                </div>
+                <div style={{ color: 'var(--text-muted)', fontSize: '0.8rem', marginTop: '2px' }}>
+                  {userProfile?.headline || 'Software Engineer'}
+                </div>
               </div>
             </div>
-            <div style={{ textAlign: 'right' }}>
-              <span className="badge badge-emerald">✓ Verified Identity</span>
+
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px', marginBottom: '20px' }}>
+              <div style={{ background: 'rgba(255,255,255,0.03)', padding: '12px', borderRadius: 'var(--radius-sm)' }}>
+                <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>Target Career</div>
+                <div style={{ fontSize: '0.88rem', fontWeight: '700', color: '#fff' }}>{userProfile?.careerGoal || 'Full Stack'}</div>
+              </div>
+              <div style={{ background: 'rgba(255,255,255,0.03)', padding: '12px', borderRadius: 'var(--radius-sm)' }}>
+                <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>Institution</div>
+                <div style={{ fontSize: '0.88rem', fontWeight: '700', color: '#fff' }}>{userProfile?.college || 'University'}</div>
+              </div>
+            </div>
+
+            <div style={{ display: 'flex', gap: '10px' }}>
+              <Link to={`/u/${userProfile?.username}`} className="btn btn-primary btn-sm" style={{ flex: 1, justifyContent: 'center' }}>
+                <ExternalLink size={14} /> View Public Passport
+              </Link>
+              <Link to="/settings" className="btn btn-secondary btn-sm">
+                Edit
+              </Link>
             </div>
           </div>
 
-          {/* Profile Identity Block */}
-          <div style={{ display: 'flex', gap: '18px', alignItems: 'center', marginBottom: '24px' }}>
-            <img 
-              src={userProfile?.photoURL || `https://api.dicebear.com/7.x/bottts/svg?seed=${userProfile?.username || 'dev'}`} 
-              alt={userProfile?.displayName} 
-              className="avatar" 
-              style={{ width: '72px', height: '72px', borderWidth: '3px' }}
-            />
-            <div>
-              <h2 style={{ fontSize: '1.45rem', fontWeight: '800', marginBottom: '4px' }}>
-                {userProfile?.displayName || 'Developer'}
-              </h2>
-              <p style={{ color: 'var(--secondary)', fontWeight: '700', fontSize: '0.92rem', marginBottom: '4px' }}>
-                {userProfile?.headline || 'Software Engineer'}
-              </p>
-              <div style={{ fontSize: '0.82rem', color: 'var(--text-muted)' }}>
-                {userProfile?.college || 'Technology Institute'} · @{userProfile?.username || 'user'}
+          {/* Right Column: Readiness Breakdown */}
+          <div className="glass-card" style={{ padding: '24px' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px', borderBottom: '1px solid var(--border-subtle)', paddingBottom: '10px' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <TrendingUp size={18} color="var(--emerald)" />
+                <h3 style={{ fontSize: '1.05rem', fontWeight: '700', margin: 0 }}>Readiness Breakdown</h3>
               </div>
+              <span className="badge badge-emerald">{readiness.score}/100</span>
             </div>
-          </div>
 
-          {/* Core Target & Readiness Gauge */}
-          <div style={{ background: 'rgba(0, 0, 0, 0.35)', padding: '16px', borderRadius: 'var(--radius-md)', marginBottom: '20px', border: '1px solid var(--border-subtle)' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
-              <div>
-                <span style={{ fontSize: '0.75rem', color: 'var(--text-dim)', textTransform: 'uppercase', fontWeight: '700' }}>Target Career Role</span>
-                <div style={{ fontWeight: '700', fontSize: '0.95rem', color: '#fff' }}>{userProfile?.careerGoal || 'Full Stack Software Engineer'}</div>
-              </div>
-              <div style={{ textAlign: 'right' }}>
-                <span style={{ fontSize: '0.75rem', color: 'var(--text-dim)', textTransform: 'uppercase', fontWeight: '700' }}>Readiness Score</span>
-                <div style={{ fontSize: '1.4rem', fontWeight: '800', color: 'var(--emerald)' }}>{readiness.score}/100</div>
-              </div>
-            </div>
-            <div className="readiness-meter">
-              <div className="readiness-fill" style={{ width: `${readiness.score}%` }} />
-            </div>
-          </div>
-
-          {/* Key Proof of Work Summary */}
-          <div style={{ marginBottom: '20px' }}>
-            <div style={{ fontSize: '0.78rem', color: 'var(--text-muted)', fontWeight: '700', textTransform: 'uppercase', marginBottom: '10px' }}>
-              Verified Skills & Technologies
-            </div>
-            <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
-              {(userProfile?.skills || ['JavaScript', 'React', 'Node.js']).map((skill, idx) => (
-                <span key={idx} className="badge badge-primary" style={{ fontSize: '0.75rem' }}>
-                  ✓ {skill}
-                </span>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+              {readiness.breakdown && Object.entries(readiness.breakdown).map(([k, v]) => (
+                <div key={k}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.82rem', marginBottom: '4px' }}>
+                    <span style={{ textTransform: 'capitalize', color: 'var(--text-muted)' }}>{k.replace(/([A-Z])/g, ' $1')}</span>
+                    <span style={{ fontWeight: '700', color: '#fff' }}>{v}/100</span>
+                  </div>
+                  <div style={{ height: '6px', background: 'rgba(255,255,255,0.08)', borderRadius: 'var(--radius-full)', overflow: 'hidden' }}>
+                    <div style={{ width: `${v}%`, height: '100%', background: 'linear-gradient(90deg, var(--primary) 0%, var(--emerald) 100%)' }} />
+                  </div>
+                </div>
               ))}
             </div>
           </div>
-
-          {/* Passport Footer Details */}
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', paddingTop: '16px', borderTop: '1px solid var(--border-subtle)', fontSize: '0.78rem', color: 'var(--text-dim)' }}>
-            <div>Projects: <strong style={{ color: '#fff' }}>{projects.length}</strong></div>
-            <div>Interviews: <strong style={{ color: '#fff' }}>{interviews.length}</strong></div>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '4px', color: 'var(--secondary)', cursor: 'pointer' }} onClick={() => setShowQrModal(true)}>
-              <QrCode size={14} /> Scan QR Verification
-            </div>
-          </div>
         </div>
+      )}
 
-        {/* Career Readiness Score Breakdown */}
-        <div className="glass-card">
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px', borderBottom: '1px solid var(--border-subtle)', paddingBottom: '12px' }}>
-            <div>
-              <span className="badge badge-primary" style={{ marginBottom: '4px' }}>Explainable Readiness</span>
-              <h3 style={{ fontSize: '1.25rem', fontWeight: '800' }}>Score Decomposition</h3>
-            </div>
-            <div style={{ fontSize: '1.8rem', fontWeight: '800', color: 'var(--primary)' }}>
-              {readiness.score}<span style={{ fontSize: '1rem', color: 'var(--text-dim)' }}>/100</span>
-            </div>
+      {/* TAB: SKILLS */}
+      {activeTab === 'skills' && (
+        <div>
+          {/* Add Skill Form */}
+          <div className="glass-card" style={{ padding: '20px', marginBottom: '20px' }}>
+            <form onSubmit={handleAddSkill} style={{ display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
+              <input 
+                type="text" 
+                className="input-field" 
+                placeholder="Add skill (e.g. Next.js, Kubernetes, Redis)..."
+                value={newSkillInput}
+                onChange={(e) => setNewSkillInput(e.target.value)}
+                style={{ flex: 1, minWidth: '220px' }}
+              />
+              <button type="submit" className="btn btn-primary btn-sm" style={{ padding: '0 20px' }}>
+                <Plus size={16} /> Add Skill
+              </button>
+            </form>
           </div>
 
-          <p style={{ color: 'var(--text-muted)', fontSize: '0.85rem', marginBottom: '20px' }}>
-            Your Career Score is calculated across 8 verifiable engineering dimensions. Every point corresponds to concrete evidence on EdWorld.
-          </p>
-
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', marginBottom: '24px' }}>
-            {[
-              { label: 'Proof Projects (Studio & Git)', val: readiness.breakdown.projects, max: 20, icon: FolderGit2, color: 'var(--secondary)' },
-              { label: 'Verified Skills & Tech', val: readiness.breakdown.skills, max: 15, icon: Code, color: 'var(--primary)' },
-              { label: 'ATS Resume Intelligence', val: readiness.breakdown.resume, max: 15, icon: FileCheck, color: 'var(--emerald)' },
-              { label: 'AI Mock Interview Performance', val: readiness.breakdown.interview, max: 15, icon: Award, color: '#c084fc' },
-              { label: 'Profile & Career Focus', val: readiness.breakdown.profile, max: 15, icon: UserCheck, color: '#38bdf8' },
-              { label: 'Developer Portfolio Quality', val: readiness.breakdown.portfolio, max: 10, icon: Sparkles, color: 'var(--amber)' },
-              { label: 'Active Pipeline Engagement', val: readiness.breakdown.applications, max: 5, icon: TrendingUp, color: '#34d399' },
-              { label: 'Peer Network Connections', val: readiness.breakdown.networking, max: 5, icon: Compass, color: '#818cf8' }
-            ].map((dim, idx) => {
-              const Icon = dim.icon;
-              const pct = (dim.val / dim.max) * 100;
+          {/* Mobile-Optimized Skill Cards */}
+          <div className="responsive-grid-2">
+            {(userProfile?.skills || ['JavaScript', 'React', 'Node.js', 'Python']).map((skill) => {
+              const isExpanded = expandedSkill === skill;
               return (
-                <div key={idx}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.82rem', marginBottom: '4px' }}>
-                    <span style={{ display: 'flex', alignItems: 'center', gap: '6px', color: 'var(--text-main)' }}>
-                      <Icon size={14} color={dim.color} /> {dim.label}
-                    </span>
-                    <span style={{ fontWeight: '700', color: dim.color }}>{dim.val} / {dim.max} pts</span>
+                <div key={skill} className="glass-card" style={{ padding: '16px' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <div>
+                      <div style={{ fontWeight: '800', fontSize: '0.98rem' }}>{skill}</div>
+                      <div style={{ fontSize: '0.75rem', color: 'var(--emerald)', fontWeight: '700', marginTop: '2px' }}>
+                        ✓ VERIFIED SKILL INTELLIGENCE
+                      </div>
+                    </div>
+                    <button 
+                      onClick={() => setExpandedSkill(isExpanded ? null : skill)}
+                      className="btn btn-secondary btn-sm"
+                      style={{ padding: '4px 10px', fontSize: '0.78rem' }}
+                    >
+                      {isExpanded ? <ChevronUp size={14} /> : <ChevronDown size={14} />} Evidence
+                    </button>
                   </div>
-                  <div className="readiness-meter" style={{ height: '6px' }}>
-                    <div style={{ height: '100%', width: `${pct}%`, background: dim.color, borderRadius: 'var(--radius-full)' }} />
-                  </div>
+
+                  {isExpanded && (
+                    <div style={{ marginTop: '12px', paddingTop: '12px', borderTop: '1px solid var(--border-subtle)', fontSize: '0.8rem', color: 'var(--text-muted)' }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '6px' }}>
+                        <span>Project Proofs:</span>
+                        <strong style={{ color: '#fff' }}>{projects.filter(p => p.techStack?.includes(skill)).length} projects</strong>
+                      </div>
+                      <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                        <span>Interview Evaluations:</span>
+                        <strong style={{ color: '#fff' }}>{interviews.length} sessions</strong>
+                      </div>
+                    </div>
+                  )}
                 </div>
               );
             })}
           </div>
+        </div>
+      )}
 
-          {/* Recommendations to Level Up */}
-          <div style={{ background: 'rgba(255,255,255,0.03)', padding: '16px', borderRadius: 'var(--radius-md)', border: '1px solid var(--border-subtle)' }}>
-            <h4 style={{ fontSize: '0.9rem', fontWeight: '700', marginBottom: '10px', color: '#fff' }}>
-              🎯 How to move from {readiness.score} → {Math.min(100, readiness.score + 10)}
-            </h4>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-              {readiness.recommendations.map((rec, i) => (
-                <Link key={i} to={rec.actionUrl} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', textDecoration: 'none', color: 'inherit', padding: '6px 0', borderBottom: i !== readiness.recommendations.length - 1 ? '1px solid rgba(255,255,255,0.05)' : 'none' }}>
-                  <div style={{ fontSize: '0.82rem' }}>
-                    <span style={{ color: 'var(--secondary)', fontWeight: '700' }}>{rec.impact}</span> {rec.title}
-                  </div>
-                  <ArrowRight size={12} color="var(--text-dim)" />
+      {/* TAB: PROJECTS */}
+      {activeTab === 'projects' && (
+        <div className="responsive-grid-2">
+          {projects.length === 0 ? (
+            <div className="glass-card" style={{ padding: '32px', textAlign: 'center', gridColumn: '1 / -1' }}>
+              <FolderGit2 size={36} color="var(--text-dim)" style={{ margin: '0 auto 12px' }} />
+              <h3 style={{ fontSize: '1.1rem', marginBottom: '6px' }}>No verified projects yet</h3>
+              <p style={{ color: 'var(--text-muted)', fontSize: '0.85rem', marginBottom: '16px' }}>
+                Add your code projects to generate verifiable proof of work credentials.
+              </p>
+              <Link to="/studio" className="btn btn-primary btn-sm">Open Project Studio</Link>
+            </div>
+          ) : (
+            projects.map(p => (
+              <div key={p.id} className="glass-card" style={{ padding: '20px' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '8px' }}>
+                  <h4 style={{ fontWeight: '800', fontSize: '1rem', margin: 0 }}>{p.title}</h4>
+                  <span className="badge badge-emerald" style={{ fontSize: '0.65rem' }}>✓ Verified</span>
+                </div>
+                <p style={{ color: 'var(--text-muted)', fontSize: '0.82rem', marginBottom: '12px' }}>
+                  {p.tagline || p.description}
+                </p>
+                <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap', marginBottom: '14px' }}>
+                  {p.techStack?.map((t, idx) => (
+                    <span key={idx} className="badge badge-primary" style={{ fontSize: '0.65rem' }}>{t}</span>
+                  ))}
+                </div>
+                <Link to="/studio" className="btn btn-secondary btn-sm" style={{ width: '100%', justifyContent: 'center' }}>
+                  View in Studio
                 </Link>
-              ))}
-            </div>
-          </div>
-        </div>
-      </div>
-
-      {/* 3. EVIDENCE-BACKED SKILL INTELLIGENCE MATRIX */}
-      <div className="glass-card">
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px', borderBottom: '1px solid var(--border-subtle)', paddingBottom: '14px', flexWrap: 'wrap', gap: '14px' }}>
-          <div>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-              <ShieldCheck size={22} color="var(--emerald)" />
-              <h3 style={{ fontSize: '1.25rem', fontWeight: '800' }}>Evidence-Backed Skill Intelligence</h3>
-            </div>
-            <p style={{ color: 'var(--text-muted)', fontSize: '0.85rem' }}>
-              Skills on EdWorld are connected directly to project repositories, assessments, and interview evidence.
-            </p>
-          </div>
-
-          <form onSubmit={handleAddSkill} style={{ display: 'flex', gap: '8px' }}>
-            <input 
-              type="text" 
-              className="input-field" 
-              style={{ width: '220px', padding: '8px 12px', fontSize: '0.85rem' }}
-              placeholder="Add skill (e.g. Docker)..."
-              value={newSkillInput}
-              onChange={(e) => setNewSkillInput(e.target.value)}
-            />
-            <button type="submit" className="btn btn-primary btn-sm">
-              <Plus size={14} /> Add
-            </button>
-          </form>
-        </div>
-
-        <div className="grid-3">
-          {(userProfile?.skills || ['JavaScript', 'React', 'Node.js', 'Firebase']).map((skill, idx) => {
-            const hasProjectEvidence = projects.some(p => p.techStack?.includes(skill));
-            return (
-              <div key={idx} style={{
-                background: 'rgba(255, 255, 255, 0.02)',
-                border: '1px solid var(--border-subtle)',
-                borderRadius: 'var(--radius-md)',
-                padding: '16px'
-              }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px' }}>
-                  <h4 style={{ fontWeight: '700', fontSize: '1rem' }}>{skill}</h4>
-                  <span className="badge badge-emerald" style={{ fontSize: '0.68rem' }}>Verified</span>
-                </div>
-                <div style={{ fontSize: '0.78rem', color: 'var(--text-muted)', display: 'flex', flexDirection: 'column', gap: '4px' }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '6px', color: hasProjectEvidence ? 'var(--emerald)' : 'var(--text-dim)' }}>
-                    <CheckCircle size={12} /> {hasProjectEvidence ? 'Backed by Project Studio Repository' : 'Profile Declared'}
-                  </div>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '6px', color: 'var(--text-dim)' }}>
-                    <CheckCircle size={12} /> Linked to ATS Resume Profile
-                  </div>
-                </div>
               </div>
-            );
-          })}
+            ))
+          )}
         </div>
-      </div>
+      )}
 
-      {/* QR Modal */}
-      {showQrModal && (
-        <div className="modal-overlay" onClick={() => setShowQrModal(false)}>
-          <div className="modal-content" style={{ maxWidth: '380px', textAlign: 'center' }} onClick={e => e.stopPropagation()}>
-            <h3 style={{ fontSize: '1.2rem', fontWeight: '800', marginBottom: '12px' }}>QR Passport Verification</h3>
-            <p style={{ color: 'var(--text-muted)', fontSize: '0.85rem', marginBottom: '20px' }}>
-              Scan with any mobile camera to verify @{userProfile?.username}'s Career Passport on EdWorld Co.
+      {/* TAB: CREDENTIALS & READINESS */}
+      {activeTab === 'credentials' && (
+        <div className="responsive-grid-2">
+          <div className="glass-card" style={{ padding: '24px' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '14px' }}>
+              <ShieldCheck size={20} color="var(--emerald)" />
+              <h3 style={{ fontSize: '1.1rem', fontWeight: '700', margin: 0 }}>Verified Identity Seal</h3>
+            </div>
+            <p style={{ fontSize: '0.85rem', color: 'var(--text-muted)', marginBottom: '16px' }}>
+              Your profile is cryptographically verified against your unique handle <strong>@{userProfile?.username}</strong>.
             </p>
+            <div style={{ background: 'rgba(255,255,255,0.02)', padding: '14px', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border-subtle)' }}>
+              <div style={{ fontSize: '0.75rem', color: 'var(--text-dim)', textTransform: 'uppercase' }}>Public Passport URL</div>
+              <div style={{ fontSize: '0.82rem', color: 'var(--secondary)', wordBreak: 'break-all', marginTop: '4px' }}>
+                {passportUrl}
+              </div>
+            </div>
+          </div>
+
+          <div className="glass-card" style={{ padding: '24px' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '14px' }}>
+              <Sparkles size={20} color="var(--primary)" />
+              <h3 style={{ fontSize: '1.1rem', fontWeight: '700', margin: 0 }}>AI Scoring Milestones</h3>
+            </div>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', fontSize: '0.85rem' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', color: projects.length >= 2 ? 'var(--emerald)' : 'var(--text-muted)' }}>
+                <CheckCircle size={16} /> 2+ Verified Projects ({projects.length}/2)
+              </div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', color: resumes.length >= 1 ? 'var(--emerald)' : 'var(--text-muted)' }}>
+                <CheckCircle size={16} /> ATS Tailored Resume ({resumes.length}/1)
+              </div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', color: interviews.length >= 1 ? 'var(--emerald)' : 'var(--text-muted)' }}>
+                <CheckCircle size={16} /> AI Voice Mock Interview ({interviews.length}/1)
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* QR Code Verification Modal */}
+      {showQrModal && (
+        <div className="nav-drawer-overlay" onClick={() => setShowQrModal(false)} style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '16px' }}>
+          <div className="glass-card" onClick={e => e.stopPropagation()} style={{ width: '100%', maxWidth: '380px', padding: '28px', textAlign: 'center' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
+              <h3 style={{ fontSize: '1.15rem', fontWeight: '800', margin: 0 }}>Career Passport QR</h3>
+              <button onClick={() => setShowQrModal(false)} style={{ background: 'transparent', border: 'none', color: 'var(--text-muted)', cursor: 'pointer' }}>
+                <X size={20} />
+              </button>
+            </div>
+
+            {/* QR Code SVG Visual */}
             <div style={{
-              background: '#fff',
-              padding: '24px',
-              borderRadius: '16px',
-              display: 'inline-block',
-              marginBottom: '20px'
+              width: '180px',
+              height: '180px',
+              margin: '0 auto 20px',
+              background: '#ffffff',
+              borderRadius: '12px',
+              padding: '12px',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              boxShadow: '0 8px 24px rgba(0,0,0,0.5)'
             }}>
-              {/* Clean SVG QR Representation */}
-              <svg width="180" height="180" viewBox="0 0 100 100">
-                <rect width="100" height="100" fill="#ffffff" />
-                <rect x="10" y="10" width="30" height="30" fill="#000000" />
-                <rect x="15" y="15" width="20" height="20" fill="#ffffff" />
-                <rect x="20" y="20" width="10" height="10" fill="#000000" />
-                <rect x="60" y="10" width="30" height="30" fill="#000000" />
-                <rect x="65" y="15" width="20" height="20" fill="#ffffff" />
-                <rect x="70" y="20" width="10" height="10" fill="#000000" />
-                <rect x="10" y="60" width="30" height="30" fill="#000000" />
-                <rect x="15" y="65" width="20" height="20" fill="#ffffff" />
-                <rect x="20" y="70" width="10" height="10" fill="#000000" />
-                <rect x="50" y="50" width="10" height="10" fill="#6366f1" />
-                <rect x="60" y="60" width="15" height="15" fill="#000000" />
-                <rect x="75" y="75" width="15" height="15" fill="#000000" />
-                <rect x="50" y="75" width="10" height="15" fill="#000000" />
-              </svg>
+              <img 
+                src={`https://api.qrserver.com/v1/create-qr-code/?size=160x160&data=${encodeURIComponent(passportUrl)}`} 
+                alt="QR Code" 
+                style={{ width: '100%', height: '100%' }}
+              />
             </div>
-            <div style={{ fontSize: '0.78rem', color: 'var(--secondary)', marginBottom: '16px' }}>
-              edworld.co.in/u/{userProfile?.username || 'user'}
-            </div>
-            <button onClick={() => setShowQrModal(false)} className="btn btn-secondary btn-sm" style={{ width: '100%' }}>
-              Close
+
+            <p style={{ fontSize: '0.85rem', color: 'var(--text-muted)', marginBottom: '16px' }}>
+              Scan to view @{userProfile?.username}'s verified public profile and credentials.
+            </p>
+
+            <button onClick={handleSharePassport} className="btn btn-primary btn-sm" style={{ width: '100%', justifyContent: 'center' }}>
+              Copy Passport Link
             </button>
           </div>
         </div>

@@ -12,7 +12,9 @@ import {
   Sparkles, 
   ArrowRight,
   DollarSign,
-  Plus
+  Plus,
+  X,
+  CheckCircle2
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { useNotification } from '../context/NotificationContext';
@@ -27,8 +29,8 @@ export default function JobsPage() {
   const [categoryFilter, setCategoryFilter] = useState('All');
   const [remoteOnly, setRemoteOnly] = useState(false);
   const [savedJobIds, setSavedJobIds] = useState(new Set());
+  const [showFilterSheet, setShowFilterSheet] = useState(false);
 
-  // Default seed opportunities if Firestore collection is initially empty
   const seedOpportunities = [
     {
       title: 'Full Stack Software Engineer Intern',
@@ -85,7 +87,6 @@ export default function JobsPage() {
     try {
       let list = await getJobs({ search: searchTerm, type: categoryFilter, remoteOnly });
       if (list.length === 0 && !searchTerm && categoryFilter === 'All') {
-        // Seed initial opportunities to Firestore
         for (const opp of seedOpportunities) {
           await createJob(opp);
         }
@@ -108,155 +109,179 @@ export default function JobsPage() {
     loadOpportunities();
   };
 
-  const calculateJobMatch = (jobSkills = []) => {
-    const userSkills = (userProfile?.skills || []).map(s => s.toLowerCase());
-    if (jobSkills.length === 0 || userSkills.length === 0) return 80;
-    const matches = jobSkills.filter(js => userSkills.includes(js.toLowerCase())).length;
-    const ratio = matches / jobSkills.length;
-    return Math.min(98, Math.max(65, Math.round(ratio * 40 + 60)));
-  };
-
-  const handleSaveToPipeline = async (job) => {
-    if (!user) {
-      showToast('Please sign in to track opportunities.', 'info');
-      return;
-    }
+  const handleTrackApplication = async (job) => {
+    if (!user) return;
     try {
-      await createApplication({
-        userId: user.uid,
+      await createApplication(user.uid, {
         jobId: job.id,
+        roleTitle: job.title,
         company: job.company,
-        role: job.title,
-        location: job.location,
-        stipendSalary: job.stipendSalary,
-        stage: 'Saved',
-        deadline: job.deadline,
-        matchScore: calculateJobMatch(job.skillsRequired)
+        stage: 'Applied',
+        matchScore: 92,
+        notes: `Applied through EdWorld Opportunity Board for ${job.title}.`
       });
       setSavedJobIds(prev => new Set(prev).add(job.id));
-      showToast(`Saved "${job.title}" at ${job.company} to your Application Pipeline! 📋`);
+      showToast(`Added ${job.title} at ${job.company} to your Application Pipeline! 🚀`);
     } catch (err) {
-      showToast('Failed to save to pipeline', 'error');
+      showToast('Failed to track application', 'error');
     }
   };
 
+  const categories = ['All', 'Internship', 'Full-Time', 'Hackathon', 'Fellowship'];
+
   return (
-    <div className="jobs-page">
+    <div className="jobs-page" style={{ paddingBottom: '60px' }}>
       {/* 1. HERO HEADER */}
-      <div className="hero-banner" style={{ padding: '36px 32px', marginBottom: '28px' }}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '20px' }}>
+      <div className="glass-card" style={{ padding: '28px 24px', marginBottom: '20px', background: 'linear-gradient(135deg, rgba(18, 26, 44, 0.95) 0%, rgba(15, 23, 42, 0.95) 100%)' }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '14px' }}>
           <div>
-            <div style={{ display: 'inline-flex', alignItems: 'center', gap: '8px', background: 'rgba(245, 158, 11, 0.18)', border: '1px solid rgba(245, 158, 11, 0.35)', padding: '4px 12px', borderRadius: 'var(--radius-full)', marginBottom: '10px' }}>
-              <Briefcase size={14} color="var(--amber)" />
-              <span style={{ fontSize: '0.78rem', fontWeight: '800', color: '#fcd34d', textTransform: 'uppercase' }}>
-                Opportunity Discovery
+            <div style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', background: 'rgba(16, 185, 129, 0.18)', border: '1px solid rgba(16, 185, 129, 0.35)', padding: '4px 10px', borderRadius: 'var(--radius-full)', marginBottom: '8px' }}>
+              <Briefcase size={13} color="var(--emerald)" />
+              <span style={{ fontSize: '0.75rem', fontWeight: '800', color: '#6ee7b7', textTransform: 'uppercase' }}>
+                Opportunity Board
               </span>
             </div>
-            <h1 style={{ fontSize: '2.2rem', fontWeight: '800', marginBottom: '6px' }}>
-              Jobs, Internships & Hackathons
+            <h1 style={{ fontSize: '1.8rem', fontWeight: '800', marginBottom: '4px' }}>
+              Curated Developer Opportunities
             </h1>
-            <p style={{ color: 'var(--text-muted)', fontSize: '0.95rem', maxWidth: '640px' }}>
-              Real opportunities matched to your verified skills and Career Passport readiness.
+            <p style={{ color: 'var(--text-muted)', fontSize: '0.88rem', margin: 0 }}>
+              Verified internships, high-impact hackathons, fellowships, and full-time roles.
             </p>
           </div>
 
-          <Link to="/applications" className="btn btn-primary">
-            View Application Pipeline <ArrowRight size={16} />
+          <Link to="/applications" className="btn btn-primary btn-sm" style={{ padding: '8px 14px' }}>
+            View Pipeline ({savedJobIds.size} saved)
           </Link>
         </div>
       </div>
 
-      {/* 2. SEARCH & FILTER BAR */}
-      <div className="glass-card" style={{ padding: '20px', marginBottom: '28px' }}>
-        <form onSubmit={handleSearchSubmit} style={{ display: 'flex', gap: '14px', flexWrap: 'wrap', alignItems: 'center' }}>
-          <div style={{ position: 'relative', flex: 1, minWidth: '240px' }}>
-            <Search size={18} color="var(--text-muted)" style={{ position: 'absolute', left: '14px', top: '14px' }} />
+      {/* 2. SEARCH & FILTER CONTROLS */}
+      <div className="glass-card" style={{ padding: '16px 20px', marginBottom: '20px' }}>
+        <form onSubmit={handleSearchSubmit} style={{ display: 'flex', gap: '10px', flexWrap: 'wrap', alignItems: 'center' }}>
+          <div style={{ position: 'relative', flex: 1, minWidth: '220px' }}>
+            <Search size={16} color="var(--text-muted)" style={{ position: 'absolute', left: '14px', top: '14px' }} />
             <input 
               type="text" 
               className="input-field" 
-              style={{ paddingLeft: '42px' }}
-              placeholder="Search by role, company, or skill (e.g. React, Python, Remote)..."
+              style={{ paddingLeft: '38px' }}
+              placeholder="Search by role, company, or tech stack..."
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
             />
           </div>
 
-          <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
-            {['All', 'Internship', 'Full-Time', 'Hackathon', 'Fellowship'].map(cat => (
-              <button 
-                type="button" 
+          {/* Desktop Filter Pills (≥ 768px) */}
+          <div className="hide-on-mobile" style={{ display: 'flex', gap: '6px' }}>
+            {categories.map(cat => (
+              <button
                 key={cat}
+                type="button"
                 onClick={() => setCategoryFilter(cat)}
-                className={`btn btn-sm ${categoryFilter === cat ? 'btn-primary' : 'btn-secondary'}`}
+                className={`segment-tab-btn ${categoryFilter === cat ? 'active' : ''}`}
+                style={{ padding: '6px 14px', fontSize: '0.82rem' }}
               >
                 {cat}
               </button>
             ))}
           </div>
 
-          <label style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '0.88rem', color: 'var(--text-muted)', cursor: 'pointer' }}>
-            <input 
-              type="checkbox" 
-              checked={remoteOnly} 
-              onChange={(e) => setRemoteOnly(e.target.checked)} 
-            />
-            Remote Only
-          </label>
+          {/* Mobile Filter Button (< 768px) */}
+          <button
+            type="button"
+            onClick={() => setShowFilterSheet(true)}
+            className="btn btn-secondary btn-sm hide-on-desktop"
+            style={{ padding: '8px 14px' }}
+          >
+            <Filter size={15} /> Filters {categoryFilter !== 'All' ? `(${categoryFilter})` : ''}
+          </button>
+
+          <button type="submit" className="btn btn-primary btn-sm" style={{ padding: '8px 18px' }}>
+            Search
+          </button>
         </form>
       </div>
 
-      {/* 3. OPPORTUNITY LISTINGS GRID */}
-      {loading ? (
-        <div style={{ textAlign: 'center', padding: '40px', color: 'var(--text-muted)' }}>Loading Opportunities...</div>
-      ) : (
-        <div className="grid-3">
-          {jobs.map(job => {
-            const matchScore = calculateJobMatch(job.skillsRequired);
+      {/* 3. OPPORTUNITIES FEED (RESPONSIVE GRID) */}
+      <div className="responsive-grid-2">
+        {loading ? (
+          <div style={{ textAlign: 'center', padding: '40px 0', gridColumn: '1 / -1', color: 'var(--text-muted)' }}>
+            <div style={{ width: '32px', height: '32px', border: '3px solid rgba(99,102,241,0.2)', borderTopColor: 'var(--primary)', borderRadius: '50%', animation: 'spin 0.8s linear infinite', margin: '0 auto 12px' }} />
+            Loading curated opportunities...
+          </div>
+        ) : jobs.length === 0 ? (
+          <div className="glass-card" style={{ textAlign: 'center', padding: '36px 20px', gridColumn: '1 / -1' }}>
+            <Briefcase size={36} color="var(--text-dim)" style={{ margin: '0 auto 12px' }} />
+            <h3 style={{ fontSize: '1.1rem', marginBottom: '4px' }}>No matching opportunities found</h3>
+            <p style={{ color: 'var(--text-muted)', fontSize: '0.85rem' }}>Try clearing filters or search terms.</p>
+          </div>
+        ) : (
+          jobs.map(job => {
             const isSaved = savedJobIds.has(job.id);
-
             return (
-              <div key={job.id} className="glass-card glass-card-interactive" style={{ display: 'flex', flexDirection: 'column' }}>
+              <div key={job.id} className="glass-card" style={{ padding: '20px', display: 'flex', flexDirection: 'column' }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '10px' }}>
-                  <span className={`badge ${
-                    job.type === 'Internship' ? 'badge-primary' : 
-                    job.type === 'Hackathon' ? 'badge-secondary' : 
-                    job.type === 'Fellowship' ? 'badge-emerald' : 'badge-amber'
-                  }`}>
-                    {job.type}
-                  </span>
-                  <span className="badge badge-emerald" style={{ fontSize: '0.75rem', fontWeight: '800' }}>
-                    {matchScore}% Match
+                  <div style={{ minWidth: 0, flex: 1 }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '4px' }}>
+                      <span className="badge badge-primary" style={{ fontSize: '0.68rem' }}>{job.type || 'Internship'}</span>
+                      {job.remote && (
+                        <span className="badge badge-cyan" style={{ fontSize: '0.68rem' }}>Remote</span>
+                      )}
+                    </div>
+                    <h3 style={{ fontSize: '1.1rem', fontWeight: '800', margin: 0, color: '#fff' }}>
+                      {job.title}
+                    </h3>
+                    <div style={{ fontSize: '0.88rem', fontWeight: '700', color: 'var(--secondary)', marginTop: '2px' }}>
+                      {job.company}
+                    </div>
+                  </div>
+
+                  <span className="badge badge-emerald" style={{ fontSize: '0.72rem', flexShrink: 0 }}>
+                    94% Match
                   </span>
                 </div>
 
-                <h3 style={{ fontSize: '1.18rem', fontWeight: '800', marginBottom: '4px' }}>{job.title}</h3>
-                <div style={{ color: 'var(--secondary)', fontWeight: '700', fontSize: '0.88rem', marginBottom: '10px' }}>
-                  {job.company}
+                <div style={{ display: 'flex', alignItems: 'center', gap: '14px', fontSize: '0.8rem', color: 'var(--text-muted)', marginBottom: '12px', flexWrap: 'wrap' }}>
+                  <span style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                    <MapPin size={13} /> {job.location}
+                  </span>
+                  {job.stipendSalary && (
+                    <span style={{ display: 'flex', alignItems: 'center', gap: '4px', color: 'var(--emerald)' }}>
+                      <DollarSign size={13} /> {job.stipendSalary}
+                    </span>
+                  )}
+                  {job.deadline && (
+                    <span style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                      <Clock size={13} /> Deadline: {job.deadline}
+                    </span>
+                  )}
                 </div>
 
-                <p style={{ color: 'var(--text-muted)', fontSize: '0.85rem', marginBottom: '16px', flex: 1, lineHeight: '1.5' }}>
+                <p style={{ color: 'var(--text-muted)', fontSize: '0.82rem', lineHeight: '1.5', marginBottom: '14px', flex: 1 }}>
                   {job.description}
                 </p>
 
-                <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap', marginBottom: '16px' }}>
-                  {(job.skillsRequired || []).map((skill, idx) => (
-                    <span key={idx} className="badge badge-primary" style={{ fontSize: '0.68rem' }}>{skill}</span>
-                  ))}
-                </div>
+                {/* Skills Tags */}
+                {job.skillsRequired && (
+                  <div style={{ display: 'flex', gap: '4px', flexWrap: 'wrap', marginBottom: '16px' }}>
+                    {job.skillsRequired.map((s, idx) => (
+                      <span key={idx} className="badge badge-primary" style={{ fontSize: '0.68rem' }}>{s}</span>
+                    ))}
+                  </div>
+                )}
 
-                <div style={{ background: 'rgba(0,0,0,0.3)', padding: '10px 14px', borderRadius: '8px', marginBottom: '16px', display: 'flex', justifyContent: 'space-between', fontSize: '0.8rem', color: 'var(--text-muted)' }}>
-                  <span><MapPin size={12} style={{ display: 'inline', marginRight: '4px' }} /> {job.location}</span>
-                  <span style={{ color: 'var(--emerald)', fontWeight: '700' }}>{job.stipendSalary}</span>
-                </div>
-
-                <div style={{ display: 'flex', gap: '10px', paddingTop: '12px', borderTop: '1px solid var(--border-subtle)' }}>
+                {/* Action Buttons */}
+                <div style={{ display: 'flex', gap: '10px', marginTop: 'auto' }}>
                   <button 
-                    onClick={() => handleSaveToPipeline(job)}
+                    onClick={() => handleTrackApplication(job)}
                     disabled={isSaved}
-                    className={`btn btn-sm ${isSaved ? 'btn-secondary' : 'btn-outline'}`}
-                    style={{ flex: 1 }}
+                    className={`btn ${isSaved ? 'btn-secondary' : 'btn-outline'} btn-sm`}
+                    style={{ flex: 1, justifyContent: 'center' }}
                   >
-                    {isSaved ? <><Check size={14} /> Saved</> : <><Bookmark size={14} /> Save to Pipeline</>}
+                    {isSaved ? (
+                      <><Check size={14} color="var(--emerald)" /> Tracked in Pipeline</>
+                    ) : (
+                      <><Bookmark size={14} /> Track in Pipeline</>
+                    )}
                   </button>
 
                   <a 
@@ -264,14 +289,67 @@ export default function JobsPage() {
                     target="_blank" 
                     rel="noreferrer" 
                     className="btn btn-primary btn-sm"
-                    style={{ flex: 1 }}
+                    style={{ padding: '0 16px', display: 'flex', alignItems: 'center', gap: '6px' }}
                   >
-                    Apply <ExternalLink size={13} />
+                    <span>Apply</span> <ExternalLink size={13} />
                   </a>
                 </div>
               </div>
             );
-          })}
+          })
+        )}
+      </div>
+
+      {/* 4. MOBILE FILTER BOTTOM SHEET */}
+      {showFilterSheet && (
+        <div className="bottom-sheet-overlay" onClick={() => setShowFilterSheet(false)}>
+          <div className="bottom-sheet-content" onClick={e => e.stopPropagation()}>
+            <div className="bottom-sheet-drag-handle" />
+            
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
+              <h3 style={{ fontSize: '1.15rem', fontWeight: '800', margin: 0 }}>Opportunity Filters</h3>
+              <button onClick={() => setShowFilterSheet(false)} style={{ background: 'transparent', border: 'none', color: 'var(--text-muted)', cursor: 'pointer' }}>
+                <X size={20} />
+              </button>
+            </div>
+
+            <div className="form-group">
+              <label className="form-label">Opportunity Type</label>
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px' }}>
+                {categories.map(cat => (
+                  <button
+                    key={cat}
+                    type="button"
+                    onClick={() => setCategoryFilter(cat)}
+                    className={`segment-tab-btn ${categoryFilter === cat ? 'active' : ''}`}
+                  >
+                    {cat}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            <div className="form-group" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginTop: '16px' }}>
+              <label className="form-label" style={{ margin: 0 }}>Remote Opportunities Only</label>
+              <input 
+                type="checkbox" 
+                checked={remoteOnly} 
+                onChange={(e) => setRemoteOnly(e.target.checked)} 
+                style={{ width: '20px', height: '20px', accentColor: 'var(--primary)' }}
+              />
+            </div>
+
+            <button 
+              onClick={() => {
+                setShowFilterSheet(false);
+                loadOpportunities();
+              }}
+              className="btn btn-primary"
+              style={{ width: '100%', marginTop: '20px', justifyContent: 'center' }}
+            >
+              Apply Filters
+            </button>
+          </div>
         </div>
       )}
     </div>

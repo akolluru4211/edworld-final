@@ -1,0 +1,19 @@
+{
+  "short_name": "EdWorld Co.",
+  "name": "EdWorld Co. — Career Operating System",
+  "description": "AI-Powered Student Career Operating System. Build projects, prove skills, prepare for interviews, and get hired.",
+  "icons": [
+    {
+      "src": "/favicon.svg",
+      "type": "image/svg+xml",
+      "sizes": "192x192 512x512",
+      "purpose": "any maskable"
+    }
+  ],
+  "start_url": "/dashboard",
+  "display": "standalone",
+  "orientation": "portrait-primary",
+  "theme_color": "#090d16",
+  "background_color": "#090d16",
+  "categories": ["education", "productivity", "business"]
+}
