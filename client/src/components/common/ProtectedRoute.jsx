@@ -4,22 +4,23 @@ import { useAuth } from '../../context/AuthContext';
 import AuthLoadingScreen from './AuthLoadingScreen';
 
 export default function ProtectedRoute({ children }) {
-  const { user, loading, profileCompleted } = useAuth();
+  const { firebaseUser, authLoading, profileLoading, isProfileComplete } = useAuth();
   const location = useLocation();
 
-  if (loading) {
+  if (authLoading || profileLoading) {
     return <AuthLoadingScreen message="Checking your account..." />;
   }
 
-  // Not signed in
-  if (!user) {
+  // Not authenticated with Firebase
+  if (!firebaseUser) {
     return <Navigate to="/login" state={{ from: location }} replace />;
   }
 
-  // Signed in with Firebase but hasn't completed profile onboarding
-  if (!profileCompleted) {
+  // Authenticated with Firebase but profile is incomplete (new or incomplete user)
+  if (!isProfileComplete) {
     return <Navigate to="/onboarding" replace />;
   }
 
+  // Authenticated + profile completed: render protected route
   return children;
 }

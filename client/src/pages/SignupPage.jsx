@@ -13,35 +13,44 @@ export default function SignupPage() {
   const [loadingAction, setLoadingAction] = useState(''); // 'google' | 'email' | ''
   const [error, setError] = useState('');
 
-  const { user, loading, profileCompleted, signupWithEmail, loginWithGoogle } = useAuth();
+  const { 
+    firebaseUser, 
+    authLoading, 
+    profileLoading, 
+    isAuthenticated, 
+    isProfileComplete, 
+    signupWithEmail, 
+    loginWithGoogle 
+  } = useAuth();
   const { showToast } = useNotification();
   const navigate = useNavigate();
 
-  // If already authenticated and session restored, route correctly
-  if (loading) {
-    return <AuthLoadingScreen message="Checking session..." />;
+  // 1. Loading screen while Firebase / Firestore authentication is resolving
+  if (authLoading || profileLoading) {
+    return <AuthLoadingScreen message="Checking your account..." />;
   }
 
-  if (user && profileCompleted) {
+  // 2. Prevent Signup Page Loop: Route based on profile completion status
+  if (isAuthenticated && isProfileComplete) {
     return <Navigate to="/dashboard" replace />;
   }
 
-  if (user && !profileCompleted) {
+  if (isAuthenticated && !isProfileComplete) {
     return <Navigate to="/onboarding" replace />;
   }
 
+  // 3. Google Sign-In / Sign-Up
   const handleGoogleSignup = async () => {
     setLoadingAction('google');
     setError('');
     try {
-      const { isNewUser } = await loginWithGoogle();
+      const { destination, isNewUser } = await loginWithGoogle();
       if (isNewUser) {
-        showToast('Google account connected! Please complete your profile.');
-        navigate('/onboarding', { replace: true });
+        showToast('Google account connected! Please set up your developer identity.');
       } else {
         showToast('Welcome back to EdWorld Co.!');
-        navigate('/dashboard', { replace: true });
       }
+      navigate(destination, { replace: true });
     } catch (err) {
       setError(err.message || 'Google authentication could not be completed. Please try again.');
     } finally {
@@ -49,6 +58,7 @@ export default function SignupPage() {
     }
   };
 
+  // 4. Email Sign-Up
   const handleEmailSignup = async (e) => {
     e.preventDefault();
     if (!email || !password || !displayName) {
@@ -63,9 +73,9 @@ export default function SignupPage() {
     setLoadingAction('email');
     setError('');
     try {
-      await signupWithEmail(email, password, displayName);
+      const { destination } = await signupWithEmail(email, password, displayName);
       showToast('Account created! Let us set up your developer identity.');
-      navigate('/onboarding', { replace: true });
+      navigate(destination, { replace: true });
     } catch (err) {
       setError(err.message || 'Failed to create account. Please try again.');
     } finally {
@@ -106,7 +116,7 @@ export default function SignupPage() {
           </div>
         )}
 
-        {/* Google OAuth Button */}
+        {/* Real Firebase Google OAuth Button */}
         <button 
           onClick={handleGoogleSignup}
           disabled={isAuthenticating}

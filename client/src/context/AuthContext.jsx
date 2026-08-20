@@ -14,84 +14,90 @@ import {
 } from '../services/firebase';
 import { 
   getUserProfile, 
+  getOrCreateUserProfile,
   claimUsernameAndCreateProfile, 
   updateUserProfile,
-  checkUsernameAvailable
+  checkUsernameAvailable,
+  resolveUserRoute
 } from '../services/firestoreService';
 
 const AuthContext = createContext(null);
 
 export function AuthProvider({ children }) {
-  const [user, setUser] = useState(null);
-  const [userProfile, setUserProfile] = useState(null);
-  const [loading, setLoading] = useState(true);
+  // 1. Core Authentication & Profile States
+  const [authLoading, setAuthLoading] = useState(true);
+  const [firebaseUser, setFirebaseUser] = useState(null);
+  const [profileLoading, setProfileLoading] = useState(false);
+  const [profile, setProfile] = useState(null);
   const [authError, setAuthError] = useState(null);
 
-  // Diagnostic helper (development only)
+  // Diagnostic logger (development only)
   const logAuth = (stage, details = {}) => {
     if (import.meta.env.DEV) {
-      console.log(`🔐 [Auth Flow] ${stage}`, details);
+      console.log(`🔐 [Auth State Machine] ${stage}`, details);
     }
   };
 
-  const fetchProfile = async (firebaseUser) => {
-    if (!firebaseUser) {
-      setUserProfile(null);
+  // Safe fetch/create profile from Firestore
+  const fetchAndSetProfile = async (fbUser) => {
+    if (!fbUser || !fbUser.uid) {
+      setProfile(null);
+      setProfileLoading(false);
       return null;
     }
-    logAuth('Profile lookup started', { uid: firebaseUser.uid, email: firebaseUser.email });
+    setProfileLoading(true);
+    logAuth('Fetching Firestore profile for UID:', { uid: fbUser.uid });
     try {
-      const profile = await getUserProfile(firebaseUser.uid);
-      if (profile && profile.profileCompleted !== false) {
-        logAuth('Profile exists and completed', { username: profile.username });
-        setUserProfile(profile);
-        return profile;
-      } else if (profile) {
-        logAuth('Profile document found but onboarding incomplete', { profile });
-        setUserProfile(profile);
-        return profile;
-      } else {
-        logAuth('Profile missing in Firestore (new user)');
-        setUserProfile(null);
-        return null;
-      }
+      const userProfileDoc = await getOrCreateUserProfile(fbUser);
+      setProfile(userProfileDoc);
+      logAuth('Profile resolved:', {
+        uid: userProfileDoc?.uid,
+        username: userProfileDoc?.username,
+        profileCompleted: userProfileDoc?.profileCompleted
+      });
+      return userProfileDoc;
     } catch (err) {
-      console.warn('Firestore profile lookup error:', err);
-      setUserProfile(null);
+      console.error('Error in fetchAndSetProfile:', err);
+      setProfile(null);
       return null;
+    } finally {
+      setProfileLoading(false);
     }
   };
 
+  // Global Auth Observer
   useEffect(() => {
-    logAuth('Auth state listener attached');
+    logAuth('Subscribing to onAuthStateChanged');
     
-    // Check if user is returning from a redirect auth flow (mobile fallback)
+    // Check for redirect auth results (mobile browsers)
     getRedirectResult(auth).then(async (result) => {
       if (result?.user) {
         logAuth('Redirect sign-in resolved', { uid: result.user.uid });
-        setUser(result.user);
-        await fetchProfile(result.user);
+        setFirebaseUser(result.user);
+        await fetchAndSetProfile(result.user);
       }
     }).catch((err) => {
       console.warn('Redirect auth result check:', err);
     });
 
     const unsubscribe = onAuthStateChanged(auth, async (currentUser) => {
-      logAuth('Auth state changed', { user: currentUser ? currentUser.uid : 'null' });
-      setUser(currentUser);
+      logAuth('onAuthStateChanged event:', { uid: currentUser ? currentUser.uid : null });
+      setFirebaseUser(currentUser);
+      setAuthLoading(false);
+
       if (currentUser) {
-        await fetchProfile(currentUser);
+        await fetchAndSetProfile(currentUser);
       } else {
-        setUserProfile(null);
+        setProfile(null);
+        setProfileLoading(false);
       }
-      setLoading(false);
     });
 
     return () => unsubscribe();
   }, []);
 
   const formatAuthError = (err) => {
-    const code = err.code || '';
+    const code = err?.code || '';
     switch (code) {
       case 'auth/popup-closed-by-user':
         return 'Google sign-in popup was closed before completing.';
@@ -116,33 +122,49 @@ export function AuthProvider({ children }) {
       case 'auth/weak-password':
         return 'Password is too weak. Please use at least 6 characters.';
       default:
-        return err.message?.replace('Firebase: ', '') || 'Authentication failed. Please try again.';
+        return err?.message?.replace('Firebase: ', '') || 'Authentication failed. Please try again.';
     }
   };
 
+  /**
+   * Google Sign-In Handler
+   * ONLY authenticates and gets/creates minimal Firestore profile.
+   * Returns destination path resolved via central resolveUserRoute.
+   */
   const loginWithGoogle = async () => {
     setAuthError(null);
-    logAuth('Google OAuth started');
+    logAuth('Google OAuth initiated');
     try {
       let result;
       try {
         result = await signInWithPopup(auth, googleProvider);
       } catch (popupErr) {
-        // If popup was blocked by browser, attempt redirect fallback
         if (popupErr.code === 'auth/popup-blocked') {
           logAuth('Popup blocked, falling back to signInWithRedirect');
           await signInWithRedirect(auth, googleProvider);
-          return { user: null, profile: null, isNewUser: true };
+          return { firebaseUser: null, profile: null, destination: '/onboarding', isNewUser: true };
         }
         throw popupErr;
       }
 
-      logAuth('Google OAuth completed', { uid: result.user.uid, email: result.user.email });
-      setUser(result.user);
-      const profile = await fetchProfile(result.user);
-      const isNewUser = !profile || !profile.profileCompleted;
-      logAuth('Route decision after Google login', { isNewUser, destination: isNewUser ? '/onboarding' : '/dashboard' });
-      return { user: result.user, profile, isNewUser };
+      const fbUser = result.user;
+      setFirebaseUser(fbUser);
+      const userProf = await fetchAndSetProfile(fbUser);
+      const destination = resolveUserRoute(fbUser, userProf);
+      const isNewUser = !userProf || userProf.profileCompleted !== true;
+
+      logAuth('Google OAuth finished, central route decision:', {
+        uid: fbUser.uid,
+        isNewUser,
+        destination
+      });
+
+      return {
+        firebaseUser: fbUser,
+        profile: userProf,
+        destination,
+        isNewUser
+      };
     } catch (err) {
       console.error('Google Sign-In Error:', err);
       const friendlyError = formatAuthError(err);
@@ -151,16 +173,26 @@ export function AuthProvider({ children }) {
     }
   };
 
+  /**
+   * Email Login Handler
+   */
   const loginWithEmail = async (email, password) => {
     setAuthError(null);
-    logAuth('Email login started', { email });
+    logAuth('Email login initiated', { email });
     try {
       const result = await signInWithEmailAndPassword(auth, email, password);
-      logAuth('Email login completed', { uid: result.user.uid });
-      setUser(result.user);
-      const profile = await fetchProfile(result.user);
-      const isNewUser = !profile || !profile.profileCompleted;
-      return { user: result.user, profile, isNewUser };
+      const fbUser = result.user;
+      setFirebaseUser(fbUser);
+      const userProf = await fetchAndSetProfile(fbUser);
+      const destination = resolveUserRoute(fbUser, userProf);
+      const isNewUser = !userProf || userProf.profileCompleted !== true;
+
+      return {
+        firebaseUser: fbUser,
+        profile: userProf,
+        destination,
+        isNewUser
+      };
     } catch (err) {
       console.error('Email Sign-In Error:', err);
       const friendlyError = formatAuthError(err);
@@ -169,18 +201,27 @@ export function AuthProvider({ children }) {
     }
   };
 
+  /**
+   * Email Signup Handler
+   */
   const signupWithEmail = async (email, password, displayName) => {
     setAuthError(null);
-    logAuth('Email signup started', { email, displayName });
+    logAuth('Email signup initiated', { email, displayName });
     try {
       const result = await createUserWithEmailAndPassword(auth, email, password);
+      const fbUser = result.user;
       if (displayName) {
-        await updateProfile(result.user, { displayName });
+        await updateProfile(fbUser, { displayName });
       }
-      setUser(result.user);
-      setUserProfile(null);
-      logAuth('Email signup completed, pending onboarding', { uid: result.user.uid });
-      return { user: result.user, profile: null, isNewUser: true };
+      setFirebaseUser(fbUser);
+      const userProf = await fetchAndSetProfile(fbUser);
+
+      return {
+        firebaseUser: fbUser,
+        profile: userProf,
+        destination: '/onboarding',
+        isNewUser: true
+      };
     } catch (err) {
       console.error('Email Sign-Up Error:', err);
       const friendlyError = formatAuthError(err);
@@ -189,36 +230,47 @@ export function AuthProvider({ children }) {
     }
   };
 
+  /**
+   * Complete Onboarding Profile
+   */
   const completeOnboarding = async (profileData) => {
-    if (!user) {
+    if (!firebaseUser) {
       throw new Error('No authenticated user session found.');
     }
-    logAuth('Completing onboarding profile', { uid: user.uid, username: profileData.username });
+    setProfileLoading(true);
+    logAuth('Completing onboarding profile for UID:', { uid: firebaseUser.uid, username: profileData.username });
     try {
       const fullProfileData = {
         ...profileData,
-        email: user.email || profileData.email || '',
-        photoURL: profileData.photoURL || user.photoURL || `https://api.dicebear.com/7.x/bottts/svg?seed=${profileData.username}`,
+        email: firebaseUser.email || profileData.email || '',
+        photoURL: profileData.photoURL || firebaseUser.photoURL || `https://api.dicebear.com/7.x/bottts/svg?seed=${profileData.username}`,
         profileCompleted: true,
         networkVisibility: true
       };
-      const createdProfile = await claimUsernameAndCreateProfile(user.uid, fullProfileData);
-      setUserProfile(createdProfile);
-      logAuth('Onboarding profile created and active', { profile: createdProfile });
+      const createdProfile = await claimUsernameAndCreateProfile(firebaseUser.uid, fullProfileData);
+      setProfile(createdProfile);
+      setProfileLoading(false);
+      logAuth('Onboarding profile created and active:', { profile: createdProfile });
       return createdProfile;
     } catch (err) {
+      setProfileLoading(false);
       console.error('Onboarding profile creation error:', err);
       throw err;
     }
   };
 
+  /**
+   * Sign Out
+   */
   const logout = async () => {
-    logAuth('Signing out');
+    logAuth('Signing out user');
     try {
       await signOut(auth);
-      setUser(null);
-      setUserProfile(null);
+      setFirebaseUser(null);
+      setProfile(null);
       setAuthError(null);
+      setAuthLoading(false);
+      setProfileLoading(false);
       logAuth('Signed out successfully');
     } catch (err) {
       console.error('Logout error:', err);
@@ -239,10 +291,10 @@ export function AuthProvider({ children }) {
   };
 
   const updateProfileData = async (updates) => {
-    if (!user) return;
+    if (!firebaseUser) return;
     try {
-      await updateUserProfile(user.uid, updates);
-      setUserProfile(prev => ({ ...prev, ...updates }));
+      await updateUserProfile(firebaseUser.uid, updates);
+      setProfile(prev => ({ ...prev, ...updates }));
     } catch (err) {
       console.error('Profile update failed:', err);
       throw err;
@@ -250,35 +302,49 @@ export function AuthProvider({ children }) {
   };
 
   const claimCustomUsername = async (newUsername, extraData = {}) => {
-    if (!user) return;
+    if (!firebaseUser) return;
     const available = await checkUsernameAvailable(newUsername);
     if (!available) {
       throw new Error(`Username @${newUsername} is already taken.`);
     }
-    const profile = await claimUsernameAndCreateProfile(user.uid, {
-      ...userProfile,
+    const updatedProfile = await claimUsernameAndCreateProfile(firebaseUser.uid, {
+      ...profile,
       ...extraData,
       username: newUsername,
       profileCompleted: true
     });
-    setUserProfile(profile);
-    return profile;
+    setProfile(updatedProfile);
+    return updatedProfile;
   };
 
   const refreshProfile = async () => {
-    if (user) {
-      await fetchProfile(user);
+    if (firebaseUser) {
+      await fetchAndSetProfile(firebaseUser);
     }
   };
 
+  const isProfileComplete = Boolean(profile && profile.profileCompleted === true);
+  const isAuthenticated = Boolean(firebaseUser);
+  const loading = authLoading || profileLoading;
+
   const value = {
-    user,
-    firebaseUser: user,
-    userProfile,
-    loading,
+    // Exact requested state taxonomy
+    authLoading,
+    firebaseUser,
+    profileLoading,
+    profile,
+    isAuthenticated,
+    isProfileComplete,
+    isNewUser: Boolean(firebaseUser && !isProfileComplete),
     authError,
-    isAuthenticated: Boolean(user),
-    profileCompleted: Boolean(userProfile && userProfile.profileCompleted),
+    
+    // Backwards compatibility aliases
+    user: firebaseUser,
+    userProfile: profile,
+    loading,
+    profileCompleted: isProfileComplete,
+
+    // Methods
     loginWithGoogle,
     loginWithEmail,
     signupWithEmail,
@@ -288,7 +354,8 @@ export function AuthProvider({ children }) {
     updateProfileData,
     claimCustomUsername,
     refreshProfile,
-    isAdmin: userProfile?.role === 'admin' || userProfile?.email?.endsWith('@edworld.co')
+    resolveUserRoute,
+    isAdmin: profile?.role === 'admin' || profile?.email?.endsWith('@edworld.co')
   };
 
   return (

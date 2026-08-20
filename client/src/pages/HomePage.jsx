@@ -269,8 +269,8 @@ export default function HomePage() {
           Join thousands of developers turning project code into verified career proof and landing dream software engineering roles.
         </p>
         <div style={{ display: 'flex', gap: '16px', justifyContent: 'center', flexWrap: 'wrap' }}>
-          <Link to={user ? '/dashboard' : '/signup'} className="btn btn-primary btn-lg">
-            <span>{user ? 'Go to Dashboard' : 'Get Started for Free'}</span>
+          <Link to={user ? (profileCompleted ? '/dashboard' : '/onboarding') : '/signup'} className="btn btn-primary btn-lg">
+            <span>{user ? (profileCompleted ? 'Go to Dashboard' : 'Complete Your Profile') : 'Get Started for Free'}</span>
             <ArrowRight size={18} />
           </Link>
           <Link to="/jobs" className="btn btn-secondary btn-lg">

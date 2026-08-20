@@ -12,45 +12,55 @@ export default function LoginPage() {
   const [loadingAction, setLoadingAction] = useState(''); // 'google' | 'email' | ''
   const [error, setError] = useState('');
 
-  const { user, loading, profileCompleted, loginWithEmail, loginWithGoogle } = useAuth();
+  const { 
+    firebaseUser, 
+    authLoading, 
+    profileLoading, 
+    isAuthenticated, 
+    isProfileComplete, 
+    loginWithEmail, 
+    loginWithGoogle 
+  } = useAuth();
   const { showToast } = useNotification();
   const navigate = useNavigate();
   const location = useLocation();
 
   const redirectPath = location.state?.from?.pathname || '/dashboard';
 
-  // If already authenticated and session restored, route correctly
-  if (loading) {
-    return <AuthLoadingScreen message="Checking session..." />;
+  // 1. Loading screen while Firebase / Firestore authentication is resolving
+  if (authLoading || profileLoading) {
+    return <AuthLoadingScreen message="Checking your account..." />;
   }
 
-  if (user && profileCompleted) {
+  // 2. Prevent Login Page Loop: Route based on profile completion status
+  if (isAuthenticated && isProfileComplete) {
     return <Navigate to={redirectPath} replace />;
   }
 
-  if (user && !profileCompleted) {
+  if (isAuthenticated && !isProfileComplete) {
     return <Navigate to="/onboarding" replace />;
   }
 
+  // 3. Google Sign-In: Authenticates and navigates strictly to destination returned by resolver
   const handleGoogleLogin = async () => {
     setLoadingAction('google');
     setError('');
     try {
-      const { isNewUser } = await loginWithGoogle();
+      const { destination, isNewUser } = await loginWithGoogle();
       if (isNewUser) {
-        showToast('Google account connected! Please complete your career profile.');
-        navigate('/onboarding', { replace: true });
+        showToast('Google account connected! Please complete your developer profile.');
       } else {
         showToast('Welcome back to EdWorld Co.!');
-        navigate(redirectPath, { replace: true });
       }
+      navigate(destination, { replace: true });
     } catch (err) {
-      setError(err.message || 'Google authentication could not be completed. Please try again.');
+      setError(err.message || 'Google authentication was cancelled or could not be completed.');
     } finally {
       setLoadingAction('');
     }
   };
 
+  // 4. Email Sign-In
   const handleEmailLogin = async (e) => {
     e.preventDefault();
     if (!email || !password) {
@@ -60,13 +70,13 @@ export default function LoginPage() {
     setLoadingAction('email');
     setError('');
     try {
-      const { isNewUser } = await loginWithEmail(email, password);
+      const { destination, isNewUser } = await loginWithEmail(email, password);
       if (isNewUser) {
-        navigate('/onboarding', { replace: true });
+        showToast('Please complete your profile to access EdWorld.');
       } else {
         showToast('Welcome back to EdWorld Co.! Signed in successfully.');
-        navigate(redirectPath, { replace: true });
       }
+      navigate(destination, { replace: true });
     } catch (err) {
       setError(err.message || 'Failed to sign in. Please verify your email and password.');
     } finally {

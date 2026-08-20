@@ -26,7 +26,15 @@ import { useAuth } from '../../context/AuthContext';
 import { useNotification } from '../../context/NotificationContext';
 
 export default function Navbar() {
-  const { user, userProfile, profileCompleted, logout, isAdmin } = useAuth();
+  const { 
+    firebaseUser, 
+    profile, 
+    authLoading, 
+    profileLoading, 
+    isProfileComplete, 
+    logout, 
+    isAdmin 
+  } = useAuth();
   const { unreadCount } = useNotification();
   const [showProfileMenu, setShowProfileMenu] = useState(false);
   const [drawerOpen, setDrawerOpen] = useState(false);
@@ -72,16 +80,24 @@ export default function Navbar() {
     { to: '/settings', label: 'Settings & Privacy', icon: Settings, tag: null }
   ];
 
+  const homeTarget = (firebaseUser && isProfileComplete) ? '/dashboard' : (firebaseUser ? '/onboarding' : '/');
+
   return (
     <>
       <header className="navbar">
         {/* Left: Brand Logo */}
         <div style={{ display: 'flex', alignItems: 'center', gap: '14px' }}>
-          <BrandLogo to={user && profileCompleted ? '/dashboard' : (user ? '/onboarding' : '/')} />
+          <BrandLogo to={homeTarget} />
         </div>
 
-        {/* Center: Desktop Navigation Links (≥ 1024px) */}
-        {user && profileCompleted ? (
+        {/* Center & Right Navigation based on Strict Auth State */}
+        {authLoading || profileLoading ? (
+          /* Neutral Loading State (No Flash) */
+          <div className="navbar-actions">
+            <div style={{ width: '20px', height: '20px', border: '2px solid rgba(99,102,241,0.2)', borderTopColor: 'var(--primary)', borderRadius: '50%', animation: 'spin 0.8s linear infinite' }} />
+          </div>
+        ) : (firebaseUser && isProfileComplete) ? (
+          /* Logged In & Profile Completed */
           <>
             <nav className="nav-links" style={{ display: 'none', lg: 'flex' }}>
               {desktopNavItems.map((item) => {
@@ -99,7 +115,6 @@ export default function Navbar() {
               })}
             </nav>
 
-            {/* Right Actions */}
             <div className="navbar-actions">
               {isAdmin && (
                 <Link to="/admin" className="btn btn-outline btn-sm hide-on-mobile" style={{ padding: '6px 10px', fontSize: '0.8rem' }}>
@@ -143,8 +158,8 @@ export default function Navbar() {
                   aria-label="User profile menu"
                 >
                   <img 
-                    src={userProfile?.photoURL || `https://api.dicebear.com/7.x/bottts/svg?seed=${userProfile?.username || 'dev'}`} 
-                    alt={userProfile?.displayName || 'User'} 
+                    src={profile?.photoURL || `https://api.dicebear.com/7.x/bottts/svg?seed=${profile?.username || 'dev'}`} 
+                    alt={profile?.displayName || 'User'} 
                     className="avatar" 
                     style={{ width: '36px', height: '36px', borderRadius: '50%', border: '1px solid var(--border-glow)' }}
                   />
@@ -165,15 +180,15 @@ export default function Navbar() {
                     animation: 'modalEnter 0.15s ease-out'
                   }}>
                     <div style={{ padding: '12px 16px', borderBottom: '1px solid var(--border-subtle)' }}>
-                      <div style={{ fontWeight: '700', fontSize: '0.92rem' }}>{userProfile?.displayName || 'Developer'}</div>
-                      <div style={{ fontSize: '0.78rem', color: 'var(--secondary)' }}>@{userProfile?.username || 'user'}</div>
+                      <div style={{ fontWeight: '700', fontSize: '0.92rem' }}>{profile?.displayName || 'Developer'}</div>
+                      <div style={{ fontSize: '0.78rem', color: 'var(--secondary)' }}>@{profile?.username || 'user'}</div>
                       <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginTop: '4px' }}>
-                        Career Readiness: <strong style={{ color: 'var(--emerald)' }}>{userProfile?.careerScore || 70}/100</strong>
+                        Career Readiness: <strong style={{ color: 'var(--emerald)' }}>{profile?.careerScore || 70}/100</strong>
                       </div>
                     </div>
 
                     <Link 
-                      to={`/u/${userProfile?.username}`} 
+                      to={`/u/${profile?.username}`} 
                       onClick={() => setShowProfileMenu(false)}
                       style={{ padding: '10px 16px', color: 'var(--text-main)', display: 'flex', alignItems: 'center', gap: '10px', textDecoration: 'none', fontSize: '0.88rem' }}
                     >
@@ -200,7 +215,7 @@ export default function Navbar() {
                 )}
               </div>
 
-              {/* Hamburger Toggle (Tablet & Mobile) */}
+              {/* Hamburger Drawer Trigger */}
               <button 
                 className="btn btn-secondary btn-sm"
                 onClick={() => setDrawerOpen(true)}
@@ -211,11 +226,11 @@ export default function Navbar() {
               </button>
             </div>
           </>
-        ) : user ? (
-          /* User authenticated in Onboarding */
+        ) : firebaseUser ? (
+          /* Authenticated but Pending Onboarding */
           <div className="navbar-actions">
             <span className="hide-on-mobile" style={{ fontSize: '0.85rem', color: 'var(--text-muted)' }}>
-              Signed in as <strong style={{ color: 'var(--text-main)' }}>{user.email || user.displayName}</strong>
+              Signed in as <strong style={{ color: 'var(--text-main)' }}>{firebaseUser.email || firebaseUser.displayName}</strong>
             </span>
             <button 
               onClick={handleLogout}
@@ -226,7 +241,7 @@ export default function Navbar() {
             </button>
           </div>
         ) : (
-          /* Public Guest Navigation */
+          /* Public Guest */
           <div className="navbar-actions">
             <Link to="/login" className="btn btn-outline btn-sm" style={{ padding: '8px 16px' }}>
               Sign In
@@ -238,14 +253,14 @@ export default function Navbar() {
         )}
       </header>
 
-      {/* Full Responsive Drawer (Tablet & Mobile Slide-Out) */}
-      {drawerOpen && user && (
+      {/* Responsive Slide-Out Drawer (Tablet & Mobile) */}
+      {drawerOpen && firebaseUser && (
         <div className="nav-drawer-overlay" onClick={() => setDrawerOpen(false)}>
           <div className="nav-drawer-content" onClick={(e) => e.stopPropagation()}>
             
             {/* Drawer Header */}
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '20px', borderBottom: '1px solid var(--border-subtle)', paddingBottom: '16px' }}>
-              <BrandLogo to={profileCompleted ? '/dashboard' : '/onboarding'} size="sm" />
+              <BrandLogo to={isProfileComplete ? '/dashboard' : '/onboarding'} size="sm" />
               <button 
                 onClick={() => setDrawerOpen(false)}
                 style={{ background: 'rgba(255,255,255,0.06)', border: 'none', borderRadius: '50%', width: '36px', height: '36px', color: 'var(--text-muted)', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
@@ -256,9 +271,9 @@ export default function Navbar() {
             </div>
 
             {/* User Identity Card */}
-            {profileCompleted && (
+            {isProfileComplete && (
               <Link 
-                to={`/u/${userProfile?.username}`} 
+                to={`/u/${profile?.username}`} 
                 onClick={() => setDrawerOpen(false)}
                 style={{
                   display: 'flex',
@@ -274,22 +289,22 @@ export default function Navbar() {
                 }}
               >
                 <img 
-                  src={userProfile?.photoURL || `https://api.dicebear.com/7.x/bottts/svg?seed=${userProfile?.username || 'dev'}`} 
-                  alt={userProfile?.displayName}
+                  src={profile?.photoURL || `https://api.dicebear.com/7.x/bottts/svg?seed=${profile?.username || 'dev'}`} 
+                  alt={profile?.displayName}
                   style={{ width: '42px', height: '42px', borderRadius: '50%', border: '2px solid var(--primary)' }}
                 />
                 <div style={{ flex: 1, minWidth: 0 }}>
                   <div style={{ fontWeight: '800', fontSize: '0.92rem', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                    {userProfile?.displayName || 'Developer'}
+                    {profile?.displayName || 'Developer'}
                   </div>
                   <div style={{ fontSize: '0.78rem', color: 'var(--secondary)' }}>
-                    @{userProfile?.username || 'user'}
+                    @{profile?.username || 'user'}
                   </div>
                 </div>
                 <div style={{ textAlign: 'right' }}>
                   <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>Score</div>
                   <div style={{ fontSize: '0.95rem', fontWeight: '800', color: 'var(--emerald)' }}>
-                    {userProfile?.careerScore || 70}
+                    {profile?.careerScore || 70}
                   </div>
                 </div>
               </Link>

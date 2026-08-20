@@ -48,7 +48,14 @@ const DEGREES = [
 ];
 
 export default function OnboardingPage() {
-  const { user, userProfile, loading, profileCompleted, completeOnboarding } = useAuth();
+  const { 
+    firebaseUser, 
+    profile, 
+    authLoading, 
+    profileLoading, 
+    isProfileComplete, 
+    completeOnboarding 
+  } = useAuth();
   const { showToast } = useNotification();
   const navigate = useNavigate();
 
@@ -73,16 +80,16 @@ export default function OnboardingPage() {
 
   // Prefill from Firebase Auth session
   useEffect(() => {
-    if (user) {
-      setDisplayName(user.displayName || '');
-      setPhotoURL(user.photoURL || '');
+    if (firebaseUser) {
+      setDisplayName(firebaseUser.displayName || '');
+      setPhotoURL(firebaseUser.photoURL || '');
       
-      const baseUser = (user.email ? user.email.split('@')[0] : 'dev')
+      const baseUser = (firebaseUser.email ? firebaseUser.email.split('@')[0] : 'dev')
         .replace(/[^a-z0-9]/gi, '').toLowerCase().slice(0, 15);
       setUsername(baseUser);
       setHeadline('Aspiring Software Engineer & Problem Solver');
     }
-  }, [user]);
+  }, [firebaseUser]);
 
   // Username validation debounce
   useEffect(() => {
@@ -103,19 +110,17 @@ export default function OnboardingPage() {
     return () => clearTimeout(timer);
   }, [username]);
 
-  // Redirect guard
-  if (loading) {
+  // Declarative Redirect guards:
+  if (authLoading || profileLoading) {
     return <AuthLoadingScreen message="Checking profile status..." />;
   }
 
-  if (!user) {
-    navigate('/login', { replace: true });
-    return null;
+  if (!firebaseUser) {
+    return <Navigate to="/login" replace />;
   }
 
-  if (profileCompleted) {
-    navigate('/dashboard', { replace: true });
-    return null;
+  if (isProfileComplete) {
+    return <Navigate to="/dashboard" replace />;
   }
 
   const handleAddSkill = (skill) => {

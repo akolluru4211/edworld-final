@@ -21,8 +21,18 @@ import {
 } from 'firebase/firestore';
 
 // ==========================================
-// USER & PROFILE MANAGEMENT
+// USER & PROFILE MANAGEMENT & ROUTE RESOLVER
 // ==========================================
+
+export function resolveUserRoute(firebaseUser, profile) {
+  if (!firebaseUser) {
+    return '/login';
+  }
+  if (!profile || profile.profileCompleted !== true) {
+    return '/onboarding';
+  }
+  return '/dashboard';
+}
 
 export async function getUserProfile(uid) {
   if (!uid) return null;
@@ -35,6 +45,33 @@ export async function getUserProfile(uid) {
     return null;
   } catch (err) {
     console.error('Error fetching user profile:', err);
+    throw err;
+  }
+}
+
+export async function getOrCreateUserProfile(firebaseUser) {
+  if (!firebaseUser || !firebaseUser.uid) return null;
+  const uid = firebaseUser.uid;
+  try {
+    const docRef = doc(db, 'users', uid);
+    const snap = await getDoc(docRef);
+    if (snap.exists()) {
+      return { id: snap.id, ...snap.data() };
+    }
+    // Document does not exist: create minimal uncompleted profile
+    const initialData = {
+      uid,
+      email: firebaseUser.email || '',
+      displayName: firebaseUser.displayName || '',
+      photoURL: firebaseUser.photoURL || '',
+      profileCompleted: false,
+      createdAt: serverTimestamp(),
+      updatedAt: serverTimestamp()
+    };
+    await setDoc(docRef, initialData, { merge: true });
+    return { id: uid, ...initialData };
+  } catch (err) {
+    console.error('Error in getOrCreateUserProfile:', err);
     throw err;
   }
 }
