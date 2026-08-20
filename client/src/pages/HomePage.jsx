@@ -23,7 +23,7 @@ import BrandLogo from '../components/common/BrandLogo';
 import { useAuth } from '../context/AuthContext';
 
 export default function HomePage() {
-  const { user } = useAuth();
+  const { user, profileCompleted } = useAuth();
 
   return (
     <div className="homepage" style={{ paddingBottom: '60px' }}>
@@ -53,8 +53,8 @@ export default function HomePage() {
           </p>
 
           <div style={{ display: 'flex', gap: '16px', flexWrap: 'wrap', alignItems: 'center' }}>
-            <Link to={user ? '/dashboard' : '/signup'} className="btn btn-primary btn-lg">
-              <span>{user ? 'Open Your Dashboard' : 'Start Your Career Journey'}</span>
+            <Link to={user ? (profileCompleted ? '/dashboard' : '/onboarding') : '/signup'} className="btn btn-primary btn-lg">
+              <span>{user ? (profileCompleted ? 'Open Your Dashboard' : 'Complete Your Profile') : 'Start Your Career Journey'}</span>
               <ArrowRight size={18} />
             </Link>
             <Link to="/career" className="btn btn-secondary btn-lg">

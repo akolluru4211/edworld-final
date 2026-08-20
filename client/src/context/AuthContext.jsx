@@ -3,6 +3,8 @@ import {
   auth, 
   googleProvider, 
   signInWithPopup, 
+  signInWithRedirect,
+  getRedirectResult,
   signInWithEmailAndPassword, 
   createUserWithEmailAndPassword, 
   signOut, 
@@ -25,70 +27,57 @@ export function AuthProvider({ children }) {
   const [loading, setLoading] = useState(true);
   const [authError, setAuthError] = useState(null);
 
+  // Diagnostic helper (development only)
+  const logAuth = (stage, details = {}) => {
+    if (import.meta.env.DEV) {
+      console.log(`🔐 [Auth Flow] ${stage}`, details);
+    }
+  };
+
   const fetchProfile = async (firebaseUser) => {
     if (!firebaseUser) {
       setUserProfile(null);
       return null;
     }
+    logAuth('Profile lookup started', { uid: firebaseUser.uid, email: firebaseUser.email });
     try {
-      let profile = await getUserProfile(firebaseUser.uid);
-      if (!profile) {
-        // Create initial default profile if doesn't exist yet
-        const baseUsername = (firebaseUser.email ? firebaseUser.email.split('@')[0] : 'dev')
-          .replace(/[^a-z0-9]/gi, '').toLowerCase().slice(0, 15) || 'user' + Math.floor(Math.random() * 10000);
-        
-        try {
-          profile = await claimUsernameAndCreateProfile(firebaseUser.uid, {
-            username: baseUsername,
-            displayName: firebaseUser.displayName || 'EdWorld Member',
-            email: firebaseUser.email || '',
-            photoURL: firebaseUser.photoURL || `https://api.dicebear.com/7.x/bottts/svg?seed=${baseUsername}`,
-            headline: 'Software Engineer & Builder',
-            college: 'Tech University',
-            careerGoal: 'Full Stack Engineer',
-            skills: ['React', 'JavaScript', 'Node.js', 'Problem Solving'],
-            careerScore: 70
-          });
-        } catch (e) {
-          // If username was taken, append random digits
-          profile = await claimUsernameAndCreateProfile(firebaseUser.uid, {
-            username: `${baseUsername}${Math.floor(Math.random() * 1000)}`,
-            displayName: firebaseUser.displayName || 'EdWorld Member',
-            email: firebaseUser.email || '',
-            photoURL: firebaseUser.photoURL || `https://api.dicebear.com/7.x/bottts/svg?seed=${baseUsername}`,
-            headline: 'Software Engineer & Builder',
-            college: 'Tech University',
-            careerGoal: 'Full Stack Engineer',
-            skills: ['React', 'JavaScript', 'Node.js'],
-            careerScore: 70
-          });
-        }
+      const profile = await getUserProfile(firebaseUser.uid);
+      if (profile && profile.profileCompleted !== false) {
+        logAuth('Profile exists and completed', { username: profile.username });
+        setUserProfile(profile);
+        return profile;
+      } else if (profile) {
+        logAuth('Profile document found but onboarding incomplete', { profile });
+        setUserProfile(profile);
+        return profile;
+      } else {
+        logAuth('Profile missing in Firestore (new user)');
+        setUserProfile(null);
+        return null;
       }
-      setUserProfile(profile);
-      return profile;
     } catch (err) {
-      console.warn('Profile sync fallback:', err);
-      const fallback = {
-        uid: firebaseUser.uid,
-        username: (firebaseUser.email ? firebaseUser.email.split('@')[0] : 'developer').toLowerCase(),
-        displayName: firebaseUser.displayName || 'Developer Member',
-        email: firebaseUser.email || '',
-        photoURL: firebaseUser.photoURL || 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&w=250&q=80',
-        headline: 'Software Engineer',
-        college: 'Engineering Institute',
-        careerGoal: 'Full Stack Engineer',
-        skills: ['React', 'Node.js', 'Firebase'],
-        careerScore: 72,
-        role: 'student',
-        privacy: 'public'
-      };
-      setUserProfile(fallback);
-      return fallback;
+      console.warn('Firestore profile lookup error:', err);
+      setUserProfile(null);
+      return null;
     }
   };
 
   useEffect(() => {
+    logAuth('Auth state listener attached');
+    
+    // Check if user is returning from a redirect auth flow (mobile fallback)
+    getRedirectResult(auth).then(async (result) => {
+      if (result?.user) {
+        logAuth('Redirect sign-in resolved', { uid: result.user.uid });
+        setUser(result.user);
+        await fetchProfile(result.user);
+      }
+    }).catch((err) => {
+      console.warn('Redirect auth result check:', err);
+    });
+
     const unsubscribe = onAuthStateChanged(auth, async (currentUser) => {
+      logAuth('Auth state changed', { user: currentUser ? currentUser.uid : 'null' });
       setUser(currentUser);
       if (currentUser) {
         await fetchProfile(currentUser);
@@ -101,68 +90,136 @@ export function AuthProvider({ children }) {
     return () => unsubscribe();
   }, []);
 
+  const formatAuthError = (err) => {
+    const code = err.code || '';
+    switch (code) {
+      case 'auth/popup-closed-by-user':
+        return 'Google sign-in popup was closed before completing.';
+      case 'auth/popup-blocked':
+        return 'Google sign-in popup was blocked by your browser. Please allow popups for this site.';
+      case 'auth/cancelled-popup-request':
+        return 'Sign-in request was cancelled.';
+      case 'auth/account-exists-with-different-credential':
+        return 'An account already exists with this email using another sign-in method.';
+      case 'auth/unauthorized-domain':
+        return 'This domain is not authorized in Firebase Console for OAuth. Please check Firebase authorized domains.';
+      case 'auth/network-request-failed':
+        return 'Network error. Please check your internet connection and try again.';
+      case 'auth/user-disabled':
+        return 'This account has been disabled. Please contact support.';
+      case 'auth/invalid-credential':
+      case 'auth/wrong-password':
+      case 'auth/user-not-found':
+        return 'Invalid email or password. Please verify your credentials.';
+      case 'auth/email-already-in-use':
+        return 'An account with this email address already exists. Please sign in instead.';
+      case 'auth/weak-password':
+        return 'Password is too weak. Please use at least 6 characters.';
+      default:
+        return err.message?.replace('Firebase: ', '') || 'Authentication failed. Please try again.';
+    }
+  };
+
   const loginWithGoogle = async () => {
     setAuthError(null);
+    logAuth('Google OAuth started');
     try {
-      const result = await signInWithPopup(auth, googleProvider);
+      let result;
+      try {
+        result = await signInWithPopup(auth, googleProvider);
+      } catch (popupErr) {
+        // If popup was blocked by browser, attempt redirect fallback
+        if (popupErr.code === 'auth/popup-blocked') {
+          logAuth('Popup blocked, falling back to signInWithRedirect');
+          await signInWithRedirect(auth, googleProvider);
+          return { user: null, profile: null, isNewUser: true };
+        }
+        throw popupErr;
+      }
+
+      logAuth('Google OAuth completed', { uid: result.user.uid, email: result.user.email });
       setUser(result.user);
       const profile = await fetchProfile(result.user);
-      return { user: result.user, profile };
+      const isNewUser = !profile || !profile.profileCompleted;
+      logAuth('Route decision after Google login', { isNewUser, destination: isNewUser ? '/onboarding' : '/dashboard' });
+      return { user: result.user, profile, isNewUser };
     } catch (err) {
       console.error('Google Sign-In Error:', err);
-      setAuthError(err.message);
-      throw err;
+      const friendlyError = formatAuthError(err);
+      setAuthError(friendlyError);
+      throw new Error(friendlyError);
     }
   };
 
   const loginWithEmail = async (email, password) => {
     setAuthError(null);
+    logAuth('Email login started', { email });
     try {
       const result = await signInWithEmailAndPassword(auth, email, password);
+      logAuth('Email login completed', { uid: result.user.uid });
       setUser(result.user);
       const profile = await fetchProfile(result.user);
-      return { user: result.user, profile };
+      const isNewUser = !profile || !profile.profileCompleted;
+      return { user: result.user, profile, isNewUser };
     } catch (err) {
       console.error('Email Sign-In Error:', err);
-      setAuthError(err.message);
-      throw err;
+      const friendlyError = formatAuthError(err);
+      setAuthError(friendlyError);
+      throw new Error(friendlyError);
     }
   };
 
-  const signupWithEmail = async (email, password, displayName, initialData = {}) => {
+  const signupWithEmail = async (email, password, displayName) => {
     setAuthError(null);
+    logAuth('Email signup started', { email, displayName });
     try {
       const result = await createUserWithEmailAndPassword(auth, email, password);
       if (displayName) {
         await updateProfile(result.user, { displayName });
       }
       setUser(result.user);
-
-      const username = initialData.username || email.split('@')[0].toLowerCase().replace(/[^a-z0-9]/gi, '');
-      const profile = await claimUsernameAndCreateProfile(result.user.uid, {
-        username,
-        displayName: displayName || 'EdWorld Member',
-        email,
-        headline: initialData.headline || 'Aspiring Software Engineer',
-        college: initialData.college || '',
-        careerGoal: initialData.careerGoal || 'Full Stack Engineer',
-        skills: initialData.skills || ['JavaScript', 'React'],
-        careerScore: 65
-      });
-      setUserProfile(profile);
-      return { user: result.user, profile };
+      setUserProfile(null);
+      logAuth('Email signup completed, pending onboarding', { uid: result.user.uid });
+      return { user: result.user, profile: null, isNewUser: true };
     } catch (err) {
       console.error('Email Sign-Up Error:', err);
-      setAuthError(err.message);
+      const friendlyError = formatAuthError(err);
+      setAuthError(friendlyError);
+      throw new Error(friendlyError);
+    }
+  };
+
+  const completeOnboarding = async (profileData) => {
+    if (!user) {
+      throw new Error('No authenticated user session found.');
+    }
+    logAuth('Completing onboarding profile', { uid: user.uid, username: profileData.username });
+    try {
+      const fullProfileData = {
+        ...profileData,
+        email: user.email || profileData.email || '',
+        photoURL: profileData.photoURL || user.photoURL || `https://api.dicebear.com/7.x/bottts/svg?seed=${profileData.username}`,
+        profileCompleted: true,
+        networkVisibility: true
+      };
+      const createdProfile = await claimUsernameAndCreateProfile(user.uid, fullProfileData);
+      setUserProfile(createdProfile);
+      logAuth('Onboarding profile created and active', { profile: createdProfile });
+      return createdProfile;
+    } catch (err) {
+      console.error('Onboarding profile creation error:', err);
       throw err;
     }
   };
 
   const logout = async () => {
+    logAuth('Signing out');
     try {
       await signOut(auth);
       setUser(null);
       setUserProfile(null);
+      setAuthError(null);
+      logAuth('Signed out successfully');
     } catch (err) {
       console.error('Logout error:', err);
     }
@@ -175,8 +232,9 @@ export function AuthProvider({ children }) {
       return true;
     } catch (err) {
       console.error('Password reset error:', err);
-      setAuthError(err.message);
-      throw err;
+      const friendly = formatAuthError(err);
+      setAuthError(friendly);
+      throw new Error(friendly);
     }
   };
 
@@ -200,7 +258,8 @@ export function AuthProvider({ children }) {
     const profile = await claimUsernameAndCreateProfile(user.uid, {
       ...userProfile,
       ...extraData,
-      username: newUsername
+      username: newUsername,
+      profileCompleted: true
     });
     setUserProfile(profile);
     return profile;
@@ -214,12 +273,16 @@ export function AuthProvider({ children }) {
 
   const value = {
     user,
+    firebaseUser: user,
     userProfile,
     loading,
     authError,
+    isAuthenticated: Boolean(user),
+    profileCompleted: Boolean(userProfile && userProfile.profileCompleted),
     loginWithGoogle,
     loginWithEmail,
     signupWithEmail,
+    completeOnboarding,
     logout,
     resetPassword,
     updateProfileData,

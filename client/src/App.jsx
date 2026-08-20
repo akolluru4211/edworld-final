@@ -5,11 +5,12 @@ import Footer from './components/common/Footer';
 import ProtectedRoute from './components/common/ProtectedRoute';
 import AdminRoute from './components/common/AdminRoute';
 
-// Public Pages
+// Public & Auth Pages
 import HomePage from './pages/HomePage';
 import LoginPage from './pages/LoginPage';
 import SignupPage from './pages/SignupPage';
 import ForgotPasswordPage from './pages/ForgotPasswordPage';
+import OnboardingPage from './pages/OnboardingPage';
 import PublicProfilePage from './pages/PublicProfilePage';
 
 // Authenticated Pages
@@ -39,6 +40,7 @@ export default function App() {
           <Route path="/login" element={<LoginPage />} />
           <Route path="/signup" element={<SignupPage />} />
           <Route path="/forgot-password" element={<ForgotPasswordPage />} />
+          <Route path="/onboarding" element={<OnboardingPage />} />
           <Route path="/u/:username" element={<PublicProfilePage />} />
 
           {/* Protected Routes */}

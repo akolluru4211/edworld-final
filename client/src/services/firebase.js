@@ -3,6 +3,8 @@ import {
   getAuth, 
   GoogleAuthProvider, 
   signInWithPopup, 
+  signInWithRedirect,
+  getRedirectResult,
   signInWithEmailAndPassword, 
   createUserWithEmailAndPassword, 
   signOut, 
@@ -11,8 +13,7 @@ import {
   onAuthStateChanged 
 } from 'firebase/auth';
 import { 
-  getFirestore, 
-  enableIndexedDbPersistence 
+  getFirestore 
 } from 'firebase/firestore';
 import { getStorage } from 'firebase/storage';
 
@@ -39,6 +40,8 @@ export const storage = getStorage(app);
 // Authentication helper exports
 export {
   signInWithPopup,
+  signInWithRedirect,
+  getRedirectResult,
   signInWithEmailAndPassword,
   createUserWithEmailAndPassword,
   signOut,

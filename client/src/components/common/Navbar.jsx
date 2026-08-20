@@ -24,7 +24,7 @@ import { useAuth } from '../../context/AuthContext';
 import { useNotification } from '../../context/NotificationContext';
 
 export default function Navbar() {
-  const { user, userProfile, logout, isAdmin } = useAuth();
+  const { user, userProfile, profileCompleted, logout, isAdmin } = useAuth();
   const { unreadCount } = useNotification();
   const [showProfileMenu, setShowProfileMenu] = useState(false);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
@@ -51,10 +51,10 @@ export default function Navbar() {
   return (
     <header className="navbar">
       <div style={{ display: 'flex', alignItems: 'center', gap: '20px' }}>
-        <BrandLogo to={user ? '/dashboard' : '/'} />
+        <BrandLogo to={user && profileCompleted ? '/dashboard' : (user ? '/onboarding' : '/')} />
       </div>
 
-      {user ? (
+      {user && profileCompleted ? (
         <>
           {/* Desktop Nav Links */}
           <nav className="nav-links" style={{ display: 'none', lg: 'flex' }}>
@@ -139,77 +139,81 @@ export default function Navbar() {
                   <Link 
                     to={`/u/${userProfile?.username}`} 
                     onClick={() => setShowProfileMenu(false)}
-                    style={{ display: 'flex', alignItems: 'center', gap: '10px', padding: '10px 16px', color: 'var(--text-main)', textDecoration: 'none', fontSize: '0.88rem' }}
+                    style={{ padding: '10px 16px', color: 'var(--text-main)', display: 'flex', alignItems: 'center', gap: '10px', textDecoration: 'none', fontSize: '0.88rem' }}
                   >
-                    <ExternalLink size={15} color="var(--primary)" /> Public Passport
+                    <ExternalLink size={16} color="var(--primary)" /> Public Passport
                   </Link>
 
                   <Link 
                     to="/settings" 
                     onClick={() => setShowProfileMenu(false)}
-                    style={{ display: 'flex', alignItems: 'center', gap: '10px', padding: '10px 16px', color: 'var(--text-main)', textDecoration: 'none', fontSize: '0.88rem' }}
+                    style={{ padding: '10px 16px', color: 'var(--text-main)', display: 'flex', alignItems: 'center', gap: '10px', textDecoration: 'none', fontSize: '0.88rem' }}
                   >
-                    <Settings size={15} color="var(--secondary)" /> Settings
+                    <Settings size={16} color="var(--text-muted)" /> Settings
                   </Link>
 
-                  {isAdmin && (
-                    <Link 
-                      to="/admin" 
-                      onClick={() => setShowProfileMenu(false)}
-                      style={{ display: 'flex', alignItems: 'center', gap: '10px', padding: '10px 16px', color: 'var(--text-main)', textDecoration: 'none', fontSize: '0.88rem' }}
-                    >
-                      <ShieldCheck size={15} color="var(--amber)" /> Admin Panel
-                    </Link>
-                  )}
-
-                  <div style={{ borderTop: '1px solid var(--border-subtle)', margin: '4px 0' }} />
+                  <div style={{ height: '1px', background: 'var(--border-subtle)', margin: '4px 0' }} />
 
                   <button 
                     onClick={handleLogout}
-                    style={{ width: '100%', display: 'flex', alignItems: 'center', gap: '10px', padding: '10px 16px', color: 'var(--rose)', background: 'transparent', border: 'none', cursor: 'pointer', fontSize: '0.88rem', textAlign: 'left' }}
+                    style={{ width: '100%', padding: '10px 16px', background: 'transparent', border: 'none', color: 'var(--rose)', display: 'flex', alignItems: 'center', gap: '10px', cursor: 'pointer', fontSize: '0.88rem', textAlign: 'left' }}
                   >
-                    <LogOut size={15} /> Sign Out
+                    <LogOut size={16} /> Sign Out
                   </button>
                 </div>
               )}
             </div>
 
-            {/* Mobile Hamburger Button */}
+            {/* Mobile Hamburger */}
             <button 
-              onClick={() => setMobileMenuOpen(!mobileMenuOpen)} 
               className="btn btn-secondary btn-sm"
-              style={{ display: 'flex', lg: 'none', padding: '6px' }}
+              onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
+              style={{ display: 'flex', lg: 'none', padding: '8px' }}
             >
               {mobileMenuOpen ? <X size={18} /> : <Menu size={18} />}
             </button>
           </div>
         </>
-      ) : (
+      ) : user ? (
+        /* User authenticated but in Onboarding */
         <div className="navbar-actions">
-          <Link to="/login" className="btn btn-secondary btn-sm">
+          <span style={{ fontSize: '0.85rem', color: 'var(--text-muted)' }}>
+            Signed in as <strong style={{ color: 'var(--text-main)' }}>{user.email || user.displayName}</strong>
+          </span>
+          <button 
+            onClick={handleLogout}
+            className="btn btn-outline btn-sm"
+            style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}
+          >
+            <LogOut size={14} /> Sign Out
+          </button>
+        </div>
+      ) : (
+        /* Public Guest Navigation */
+        <div className="navbar-actions">
+          <Link to="/login" className="btn btn-outline btn-sm" style={{ padding: '8px 16px' }}>
             Sign In
           </Link>
-          <Link to="/signup" className="btn btn-primary btn-sm">
-            Get Started
+          <Link to="/signup" className="btn btn-primary btn-sm" style={{ padding: '8px 18px' }}>
+            Get Started Free
           </Link>
         </div>
       )}
 
       {/* Mobile Drawer */}
-      {mobileMenuOpen && user && (
+      {mobileMenuOpen && user && profileCompleted && (
         <div style={{
           position: 'fixed',
-          top: '65px',
+          top: '68px',
           left: 0,
           right: 0,
           bottom: 0,
-          background: 'rgba(9, 13, 22, 0.98)',
-          zIndex: 99,
+          background: '#090d16',
+          zIndex: 999,
           padding: '24px',
           display: 'flex',
           flexDirection: 'column',
-          gap: '12px',
-          overflowY: 'auto'
+          gap: '12px'
         }}>
           {navItems.map((item) => {
             const Icon = item.icon;
@@ -218,24 +222,24 @@ export default function Navbar() {
                 key={item.to}
                 to={item.to}
                 onClick={() => setMobileMenuOpen(false)}
-                className={({ isActive }) => `btn ${isActive ? 'btn-primary' : 'btn-secondary'}`}
-                style={{ justifyContent: 'flex-start', padding: '12px 18px' }}
+                className={({ isActive }) => `nav-link-item ${isActive ? 'active' : ''}`}
+                style={{ padding: '14px 16px', fontSize: '1rem' }}
               >
-                <Icon size={18} />
+                <Icon size={20} />
                 <span>{item.label}</span>
               </NavLink>
             );
           })}
-          <div style={{ borderTop: '1px solid var(--border-subtle)', margin: '12px 0' }} />
-          <Link to={`/u/${userProfile?.username}`} onClick={() => setMobileMenuOpen(false)} className="btn btn-secondary" style={{ justifyContent: 'flex-start' }}>
-            <User size={18} /> View Public Passport
-          </Link>
-          <Link to="/settings" onClick={() => setMobileMenuOpen(false)} className="btn btn-secondary" style={{ justifyContent: 'flex-start' }}>
-            <Settings size={18} /> Account Settings
-          </Link>
-          <button onClick={handleLogout} className="btn btn-danger" style={{ justifyContent: 'flex-start' }}>
-            <LogOut size={18} /> Sign Out
-          </button>
+
+          <div style={{ marginTop: 'auto', paddingTop: '20px', borderTop: '1px solid var(--border-subtle)' }}>
+            <button 
+              onClick={handleLogout}
+              className="btn btn-outline" 
+              style={{ width: '100%', color: 'var(--rose)', borderColor: 'rgba(244, 63, 94, 0.3)', padding: '12px' }}
+            >
+              <LogOut size={18} /> Sign Out of EdWorld
+            </button>
+          </div>
         </div>
       )}
     </header>
