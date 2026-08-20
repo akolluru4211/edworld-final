@@ -25,6 +25,7 @@ import {
   respondConnectionRequest, 
   getConnectedUsers 
 } from '../services/firestoreService';
+import UserAvatar from '../components/common/UserAvatar';
 
 export default function NetworkingPage() {
   const { user, userProfile } = useAuth();
@@ -48,7 +49,7 @@ export default function NetworkingPage() {
         getConnectedUsers(user.uid)
       ]);
 
-      setPeers(profiles);
+      setPeers(profiles || []);
       setIncomingRequests(requestsData.incoming || []);
       setOutgoingRequests(requestsData.outgoing || []);
       setConnectedUsers(conns || []);
@@ -79,7 +80,7 @@ export default function NetworkingPage() {
         { uid: peer.uid, displayName: peer.displayName, photoURL: peer.photoURL }
       );
       setSentRequestUids(prev => new Set(prev).add(peer.uid));
-      showToast(`Connection request sent to ${peer.displayName}!`);
+      showToast(`Connection request sent to ${peer.displayName || 'peer'}!`);
     } catch (err) {
       showToast('Failed to send connection request', 'error');
     }
@@ -182,10 +183,12 @@ export default function NetworkingPage() {
           {/* User Cards Grid */}
           <div className="responsive-grid-2">
             {peers.length === 0 ? (
-              <div className="glass-card" style={{ padding: '36px 20px', textAlign: 'center', gridColumn: '1 / -1' }}>
-                <Users size={36} color="var(--text-dim)" style={{ margin: '0 auto 12px' }} />
-                <h3 style={{ fontSize: '1.1rem', marginBottom: '4px' }}>No student profiles found</h3>
-                <p style={{ color: 'var(--text-muted)', fontSize: '0.85rem' }}>Try broadening your search keywords.</p>
+              <div className="glass-card" style={{ padding: '48px 20px', textAlign: 'center', gridColumn: '1 / -1' }}>
+                <Users size={40} color="var(--text-dim)" style={{ margin: '0 auto 12px' }} />
+                <h3 style={{ fontSize: '1.15rem', fontWeight: '800', marginBottom: '4px' }}>No student profiles found</h3>
+                <p style={{ color: 'var(--text-muted)', fontSize: '0.88rem' }}>
+                  {searchTerm ? 'Try broadening your search query.' : 'When other students complete onboarding, they will appear in this directory.'}
+                </p>
               </div>
             ) : (
               peers.map(peer => {
@@ -193,34 +196,42 @@ export default function NetworkingPage() {
                 return (
                   <div key={peer.uid} className="glass-card" style={{ padding: '20px', display: 'flex', flexDirection: 'column' }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: '14px', marginBottom: '12px' }}>
-                      <img 
-                        src={peer.photoURL || `https://api.dicebear.com/7.x/bottts/svg?seed=${peer.username || 'dev'}`} 
-                        alt={peer.displayName} 
-                        style={{ width: '50px', height: '50px', borderRadius: '50%', border: '2px solid var(--primary)', flexShrink: 0 }}
+                      <UserAvatar 
+                        name={peer.displayName} 
+                        photoURL={peer.photoURL} 
+                        size={50} 
                       />
                       <div style={{ minWidth: 0, flex: 1 }}>
                         <h3 style={{ fontSize: '1.05rem', fontWeight: '800', margin: 0, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                          {peer.displayName || 'Developer'}
+                          {peer.displayName}
                         </h3>
-                        <div style={{ fontSize: '0.78rem', color: 'var(--secondary)', fontWeight: '700' }}>
-                          @{peer.username || 'user'}
-                        </div>
-                        <div style={{ fontSize: '0.78rem', color: 'var(--text-muted)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                          {peer.headline || peer.careerGoal || 'Software Engineer'}
-                        </div>
+                        {peer.username && (
+                          <div style={{ fontSize: '0.78rem', color: 'var(--secondary)', fontWeight: '700' }}>
+                            @{peer.username}
+                          </div>
+                        )}
+                        {peer.headline && (
+                          <div style={{ fontSize: '0.78rem', color: 'var(--text-muted)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                            {peer.headline}
+                          </div>
+                        )}
                       </div>
 
-                      <span className="badge badge-emerald" style={{ fontSize: '0.7rem', flexShrink: 0 }}>
-                        {peer.careerScore || 70} Score
-                      </span>
+                      {peer.careerScore !== undefined && peer.careerScore !== null && (
+                        <span className="badge badge-emerald" style={{ fontSize: '0.7rem', flexShrink: 0 }}>
+                          {peer.careerScore} Score
+                        </span>
+                      )}
                     </div>
 
-                    <div style={{ fontSize: '0.78rem', color: 'var(--text-muted)', marginBottom: '12px' }}>
-                      🎓 {peer.college || 'Technology Institution'}
-                    </div>
+                    {peer.college && (
+                      <div style={{ fontSize: '0.78rem', color: 'var(--text-muted)', marginBottom: '12px' }}>
+                        🎓 {peer.college}
+                      </div>
+                    )}
 
                     {/* Skills Tags */}
-                    {peer.skills && (
+                    {peer.skills && peer.skills.length > 0 && (
                       <div style={{ display: 'flex', gap: '4px', flexWrap: 'wrap', marginBottom: '16px' }}>
                         {peer.skills.slice(0, 4).map((s, idx) => (
                           <span key={idx} className="badge badge-primary" style={{ fontSize: '0.65rem' }}>{s}</span>
@@ -239,13 +250,15 @@ export default function NetworkingPage() {
                         {isSent ? 'Request Sent' : <><UserPlus size={14} /> Connect</>}
                       </button>
 
-                      <Link 
-                        to={`/u/${peer.username}`} 
-                        className="btn btn-outline btn-sm"
-                        style={{ padding: '0 14px' }}
-                      >
-                        <ExternalLink size={13} /> Passport
-                      </Link>
+                      {peer.username && (
+                        <Link 
+                          to={`/u/${peer.username}`} 
+                          className="btn btn-outline btn-sm"
+                          style={{ padding: '0 14px' }}
+                        >
+                          <ExternalLink size={13} /> Passport
+                        </Link>
+                      )}
                     </div>
                   </div>
                 );
@@ -272,14 +285,16 @@ export default function NetworkingPage() {
                 {incomingRequests.map(req => (
                   <div key={req.id} style={{ background: 'rgba(255,255,255,0.02)', padding: '14px', borderRadius: 'var(--radius-md)', border: '1px solid var(--border-subtle)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '10px' }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-                      <img 
-                        src={req.fromUserAvatar || `https://api.dicebear.com/7.x/bottts/svg?seed=${req.fromUserName || 'dev'}`} 
-                        alt={req.fromUserName} 
-                        style={{ width: '40px', height: '40px', borderRadius: '50%' }}
+                      <UserAvatar 
+                        name={req.fromUserName} 
+                        photoURL={req.fromUserAvatar} 
+                        size={40} 
                       />
                       <div>
-                        <div style={{ fontWeight: '700', fontSize: '0.92rem' }}>{req.fromUserName || 'Developer'}</div>
-                        <div style={{ fontSize: '0.78rem', color: 'var(--text-muted)' }}>{req.fromUserHeadline || 'Software Engineer'}</div>
+                        <div style={{ fontWeight: '700', fontSize: '0.92rem' }}>{req.fromUserName}</div>
+                        {req.fromUserHeadline && (
+                          <div style={{ fontSize: '0.78rem', color: 'var(--text-muted)' }}>{req.fromUserHeadline}</div>
+                        )}
                       </div>
                     </div>
 
@@ -303,30 +318,34 @@ export default function NetworkingPage() {
       {activeTab === 'connections' && (
         <div className="responsive-grid-2">
           {connectedUsers.length === 0 ? (
-            <div className="glass-card" style={{ padding: '36px 20px', textAlign: 'center', gridColumn: '1 / -1' }}>
-              <UserCheck size={36} color="var(--text-dim)" style={{ margin: '0 auto 12px' }} />
-              <h3 style={{ fontSize: '1.1rem', marginBottom: '4px' }}>No active connections yet</h3>
-              <p style={{ color: 'var(--text-muted)', fontSize: '0.85rem' }}>
-                Discover student engineers on the Discover tab and send connection requests.
+            <div className="glass-card" style={{ padding: '48px 20px', textAlign: 'center', gridColumn: '1 / -1' }}>
+              <UserCheck size={40} color="var(--text-dim)" style={{ margin: '0 auto 12px' }} />
+              <h3 style={{ fontSize: '1.15rem', fontWeight: '800', marginBottom: '4px' }}>No active connections yet</h3>
+              <p style={{ color: 'var(--text-muted)', fontSize: '0.88rem' }}>
+                Discover fellow student engineers on the Discover tab and send connection requests.
               </p>
             </div>
           ) : (
             connectedUsers.map(conn => (
               <div key={conn.id} className="glass-card" style={{ padding: '16px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-                  <img 
-                    src={conn.photoURL || `https://api.dicebear.com/7.x/bottts/svg?seed=${conn.username || 'dev'}`} 
-                    alt={conn.displayName} 
-                    style={{ width: '44px', height: '44px', borderRadius: '50%' }}
+                  <UserAvatar 
+                    name={conn.displayName} 
+                    photoURL={conn.photoURL} 
+                    size={44} 
                   />
                   <div>
-                    <div style={{ fontWeight: '700', fontSize: '0.92rem' }}>{conn.displayName || 'Developer'}</div>
-                    <div style={{ fontSize: '0.78rem', color: 'var(--secondary)' }}>@{conn.username || 'user'}</div>
+                    <div style={{ fontWeight: '700', fontSize: '0.92rem' }}>{conn.displayName}</div>
+                    {conn.username && (
+                      <div style={{ fontSize: '0.78rem', color: 'var(--secondary)' }}>@{conn.username}</div>
+                    )}
                   </div>
                 </div>
-                <Link to={`/u/${conn.username}`} className="btn btn-secondary btn-sm">
-                  View Passport
-                </Link>
+                {conn.username && (
+                  <Link to={`/u/${conn.username}`} className="btn btn-secondary btn-sm">
+                    View Passport
+                  </Link>
+                )}
               </div>
             ))
           )}

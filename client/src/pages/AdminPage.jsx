@@ -30,6 +30,7 @@ import {
   collection
 } from '../services/firestoreService';
 import { db } from '../services/firebase';
+import UserAvatar from '../components/common/UserAvatar';
 
 export default function AdminPage() {
   const { user, userProfile } = useAuth();
@@ -260,10 +261,10 @@ export default function AdminPage() {
                 gap: '12px'
               }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '14px' }}>
-                  <img src={u.photoURL || `https://api.dicebear.com/7.x/bottts/svg?seed=${u.username}`} alt={u.displayName} className="avatar" style={{ width: '42px', height: '42px' }} />
+                  <UserAvatar name={u.displayName} photoURL={u.photoURL} size={42} />
                   <div>
                     <h4 style={{ fontWeight: '700', fontSize: '0.98rem' }}>{u.displayName} (@{u.username})</h4>
-                    <p style={{ color: 'var(--text-muted)', fontSize: '0.82rem' }}>{u.headline} · {u.college}</p>
+                    <p style={{ color: 'var(--text-muted)', fontSize: '0.82rem' }}>{u.headline} {u.college ? `· ${u.college}` : ''}</p>
                   </div>
                 </div>
 
@@ -333,7 +334,7 @@ export default function AdminPage() {
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '8px' }}>
                   <div>
                     <h4 style={{ fontWeight: '700', fontSize: '1.05rem' }}>{p.title}</h4>
-                    <p style={{ fontSize: '0.82rem', color: 'var(--secondary)' }}>Owner: {p.ownerName || 'Developer'}</p>
+                    <p style={{ fontSize: '0.82rem', color: 'var(--secondary)' }}>Owner: {p.ownerName}</p>
                   </div>
                   <span className={`badge ${p.verificationStatus === 'verified' ? 'badge-emerald' : 'badge-amber'}`}>
                     {p.verificationStatus}

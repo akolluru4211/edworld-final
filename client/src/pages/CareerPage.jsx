@@ -26,6 +26,7 @@ import { useAuth } from '../context/AuthContext';
 import { useNotification } from '../context/NotificationContext';
 import { calculateCareerReadiness } from '../services/aiService';
 import { getUserProjects, getUserResumes, getUserInterviews, getUserApplications } from '../services/firestoreService';
+import UserAvatar from '../components/common/UserAvatar';
 
 export default function CareerPage() {
   const { user, userProfile, updateProfileData } = useAuth();
@@ -49,12 +50,12 @@ export default function CareerPage() {
           getUserInterviews(user.uid),
           getUserApplications(user.uid)
         ]);
-        setProjects(p);
-        setResumes(r);
-        setInterviews(i);
-        setApplications(a);
+        setProjects(p || []);
+        setResumes(r || []);
+        setInterviews(i || []);
+        setApplications(a || []);
       } catch (err) {
-        console.warn('Error loading career data:', err);
+        console.warn('Career data loading error:', err);
       }
     }
     loadData();
@@ -65,28 +66,26 @@ export default function CareerPage() {
   const handleAddSkill = async (e) => {
     e.preventDefault();
     if (!newSkillInput.trim()) return;
-    const skill = newSkillInput.trim();
-    const currentSkills = userProfile?.skills || [];
-    if (currentSkills.includes(skill)) {
-      showToast('Skill already in your profile!', 'info');
-      setNewSkillInput('');
+    const current = userProfile?.skills || [];
+    if (current.includes(newSkillInput.trim())) {
+      showToast('Skill already in your matrix.');
       return;
     }
-    const updated = [...currentSkills, skill];
+    const updated = [...current, newSkillInput.trim()];
     try {
       await updateProfileData({ skills: updated });
-      showToast(`Added ${skill} to verified skill intelligence!`);
       setNewSkillInput('');
+      showToast(`Added ${newSkillInput.trim()} to verified skill matrix! 🎯`);
     } catch (err) {
       showToast('Failed to add skill', 'error');
     }
   };
 
   const handleSharePassport = () => {
-    const url = `${window.location.origin}/u/${userProfile?.username || 'user'}`;
+    const url = `${window.location.origin}/u/${userProfile?.username || ''}`;
     if (navigator.share) {
       navigator.share({
-        title: `${userProfile?.displayName || 'Developer'} — EdWorld Career Passport`,
+        title: `${userProfile?.displayName || ''} — EdWorld Career Passport`,
         text: `Check out my verified developer passport and projects on EdWorld Co.`,
         url
       }).catch(() => {});
@@ -100,10 +99,10 @@ export default function CareerPage() {
     window.print();
   };
 
-  const passportUrl = `${window.location.origin}/u/${userProfile?.username || 'dev'}`;
+  const passportUrl = `${window.location.origin}/u/${userProfile?.username || ''}`;
 
   return (
-    <div className="career-page">
+    <div className="career-page" style={{ paddingBottom: '60px' }}>
       {/* 1. HERO HEADER */}
       <div className="glass-card" style={{ padding: '28px 24px', marginBottom: '24px', background: 'linear-gradient(135deg, rgba(18, 26, 44, 0.95) 0%, rgba(15, 23, 42, 0.95) 100%)' }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '16px' }}>
@@ -115,7 +114,7 @@ export default function CareerPage() {
               </span>
             </div>
             <h1 style={{ fontSize: '1.9rem', fontWeight: '800', marginBottom: '4px' }}>
-              {userProfile?.displayName || 'Developer'}'s Career Passport
+              {userProfile?.displayName ? `${userProfile.displayName}'s Career Passport` : 'Career Passport'}
             </h1>
             <p style={{ color: 'var(--text-muted)', fontSize: '0.9rem', maxWidth: '580px', margin: 0 }}>
               Proof-backed verification, algorithmic readiness scoring, and skill intelligence matrix.
@@ -164,64 +163,84 @@ export default function CareerPage() {
           {/* Left Column: Passport Identity Card */}
           <div className="glass-card" style={{ padding: '24px', borderTop: '4px solid var(--primary)' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: '16px', marginBottom: '20px' }}>
-              <img 
-                src={userProfile?.photoURL || `https://api.dicebear.com/7.x/bottts/svg?seed=${userProfile?.username || 'dev'}`} 
-                alt={userProfile?.displayName} 
-                style={{ width: '64px', height: '64px', borderRadius: '50%', border: '2px solid var(--primary)', flexShrink: 0 }}
+              <UserAvatar 
+                name={userProfile?.displayName} 
+                photoURL={userProfile?.photoURL} 
+                size={64} 
               />
               <div style={{ minWidth: 0, flex: 1 }}>
                 <h2 style={{ fontSize: '1.25rem', fontWeight: '800', marginBottom: '2px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                  {userProfile?.displayName || 'Developer'}
+                  {userProfile?.displayName}
                 </h2>
                 <div style={{ color: 'var(--secondary)', fontSize: '0.85rem', fontWeight: '700' }}>
-                  @{userProfile?.username || 'user'}
+                  @{userProfile?.username}
                 </div>
                 <div style={{ color: 'var(--text-muted)', fontSize: '0.8rem', marginTop: '2px' }}>
-                  {userProfile?.headline || 'Software Engineer'}
+                  {userProfile?.headline}
                 </div>
               </div>
             </div>
 
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px', marginBottom: '20px' }}>
-              <div style={{ background: 'rgba(255,255,255,0.03)', padding: '12px', borderRadius: 'var(--radius-sm)' }}>
-                <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>Target Career</div>
-                <div style={{ fontSize: '0.88rem', fontWeight: '700', color: '#fff' }}>{userProfile?.careerGoal || 'Full Stack'}</div>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', marginBottom: '20px', background: 'rgba(255,255,255,0.02)', padding: '14px', borderRadius: 'var(--radius-sm)' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.85rem' }}>
+                <span style={{ color: 'var(--text-muted)' }}>Target Career Role:</span>
+                <span style={{ fontWeight: '700', color: '#fff' }}>{userProfile?.careerGoal || 'Not specified'}</span>
               </div>
-              <div style={{ background: 'rgba(255,255,255,0.03)', padding: '12px', borderRadius: 'var(--radius-sm)' }}>
-                <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>Institution</div>
-                <div style={{ fontSize: '0.88rem', fontWeight: '700', color: '#fff' }}>{userProfile?.college || 'University'}</div>
+              <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.85rem' }}>
+                <span style={{ color: 'var(--text-muted)' }}>Institution:</span>
+                <span style={{ fontWeight: '600' }}>{userProfile?.college || 'Not specified'}</span>
+              </div>
+              <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.85rem' }}>
+                <span style={{ color: 'var(--text-muted)' }}>Degree / Class:</span>
+                <span style={{ fontWeight: '600' }}>{userProfile?.degree || ''} {userProfile?.gradYear ? `(${userProfile.gradYear})` : ''}</span>
+              </div>
+              <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.85rem' }}>
+                <span style={{ color: 'var(--text-muted)' }}>Identity Status:</span>
+                <span className="badge badge-emerald" style={{ fontSize: '0.7rem' }}>✓ EdWorld Verified</span>
               </div>
             </div>
 
             <div style={{ display: 'flex', gap: '10px' }}>
-              <Link to={`/u/${userProfile?.username}`} className="btn btn-primary btn-sm" style={{ flex: 1, justifyContent: 'center' }}>
-                <ExternalLink size={14} /> View Public Passport
-              </Link>
-              <Link to="/settings" className="btn btn-secondary btn-sm">
-                Edit
+              <Link 
+                to={`/u/${userProfile?.username}`} 
+                className="btn btn-primary btn-sm"
+                style={{ flex: 1, justifyContent: 'center' }}
+              >
+                <ExternalLink size={14} /> Open Public Link
               </Link>
             </div>
           </div>
 
-          {/* Right Column: Readiness Breakdown */}
+          {/* Right Column: Score Breakdown */}
           <div className="glass-card" style={{ padding: '24px' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px', borderBottom: '1px solid var(--border-subtle)', paddingBottom: '10px' }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                <TrendingUp size={18} color="var(--emerald)" />
-                <h3 style={{ fontSize: '1.05rem', fontWeight: '700', margin: 0 }}>Readiness Breakdown</h3>
-              </div>
-              <span className="badge badge-emerald">{readiness.score}/100</span>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
+              <h3 style={{ fontSize: '1.1rem', fontWeight: '800', margin: 0 }}>Algorithmic Readiness Score</h3>
+              <span className="badge badge-primary" style={{ fontSize: '0.75rem' }}>{readiness.readinessLevel}</span>
+            </div>
+
+            <div style={{ display: 'flex', alignItems: 'baseline', gap: '8px', marginBottom: '20px' }}>
+              <span style={{ fontSize: '2.8rem', fontWeight: '900', color: 'var(--emerald)' }}>{readiness.score}</span>
+              <span style={{ color: 'var(--text-muted)', fontSize: '1.1rem', fontWeight: '700' }}>/ 100 PTS</span>
             </div>
 
             <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-              {readiness.breakdown && Object.entries(readiness.breakdown).map(([k, v]) => (
-                <div key={k}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.82rem', marginBottom: '4px' }}>
-                    <span style={{ textTransform: 'capitalize', color: 'var(--text-muted)' }}>{k.replace(/([A-Z])/g, ' $1')}</span>
-                    <span style={{ fontWeight: '700', color: '#fff' }}>{v}/100</span>
+              {[
+                { label: 'Profile Completeness', val: readiness.breakdown.profile, max: 15 },
+                { label: 'Technical Skills Matrix', val: readiness.breakdown.skills, max: 15 },
+                { label: 'Proof of Work Projects', val: readiness.breakdown.projects, max: 20 },
+                { label: 'ATS Resume Coverage', val: readiness.breakdown.resume, max: 15 },
+                { label: 'AI Technical Interview Performance', val: readiness.breakdown.interview, max: 15 }
+              ].map((item, idx) => (
+                <div key={idx}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.8rem', marginBottom: '4px' }}>
+                    <span style={{ color: 'var(--text-muted)' }}>{item.label}</span>
+                    <span style={{ fontWeight: '700' }}>{item.val} / {item.max}</span>
                   </div>
-                  <div style={{ height: '6px', background: 'rgba(255,255,255,0.08)', borderRadius: 'var(--radius-full)', overflow: 'hidden' }}>
-                    <div style={{ width: `${v}%`, height: '100%', background: 'linear-gradient(90deg, var(--primary) 0%, var(--emerald) 100%)' }} />
+                  <div className="progress-bar-bg">
+                    <div 
+                      className="progress-bar-fill" 
+                      style={{ width: `${(item.val / item.max) * 100}%` }}
+                    />
                   </div>
                 </div>
               ))}
@@ -232,178 +251,157 @@ export default function CareerPage() {
 
       {/* TAB: SKILLS */}
       {activeTab === 'skills' && (
-        <div>
-          {/* Add Skill Form */}
-          <div className="glass-card" style={{ padding: '20px', marginBottom: '20px' }}>
-            <form onSubmit={handleAddSkill} style={{ display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
+        <div className="glass-card" style={{ padding: '24px' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px', flexWrap: 'wrap', gap: '12px' }}>
+            <h3 style={{ fontSize: '1.2rem', fontWeight: '800', margin: 0 }}>
+              Verified Skill Intelligence Matrix ({userProfile?.skills?.length || 0})
+            </h3>
+
+            <form onSubmit={handleAddSkill} style={{ display: 'flex', gap: '8px' }}>
               <input 
                 type="text" 
                 className="input-field" 
-                placeholder="Add skill (e.g. Next.js, Kubernetes, Redis)..."
+                placeholder="Add skill (e.g. Docker, GraphQL)..."
                 value={newSkillInput}
                 onChange={(e) => setNewSkillInput(e.target.value)}
-                style={{ flex: 1, minWidth: '220px' }}
+                style={{ padding: '6px 12px', fontSize: '0.85rem' }}
               />
-              <button type="submit" className="btn btn-primary btn-sm" style={{ padding: '0 20px' }}>
-                <Plus size={16} /> Add Skill
+              <button type="submit" className="btn btn-primary btn-sm">
+                <Plus size={14} /> Add
               </button>
             </form>
           </div>
 
-          {/* Mobile-Optimized Skill Cards */}
-          <div className="responsive-grid-2">
-            {(userProfile?.skills || ['JavaScript', 'React', 'Node.js', 'Python']).map((skill) => {
-              const isExpanded = expandedSkill === skill;
-              return (
-                <div key={skill} className="glass-card" style={{ padding: '16px' }}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                    <div>
-                      <div style={{ fontWeight: '800', fontSize: '0.98rem' }}>{skill}</div>
-                      <div style={{ fontSize: '0.75rem', color: 'var(--emerald)', fontWeight: '700', marginTop: '2px' }}>
-                        ✓ VERIFIED SKILL INTELLIGENCE
-                      </div>
+          {(!userProfile?.skills || userProfile.skills.length === 0) ? (
+            <div style={{ textAlign: 'center', padding: '36px 0', color: 'var(--text-muted)' }}>
+              No skills added yet. Type a skill above to expand your intelligence matrix.
+            </div>
+          ) : (
+            <div className="responsive-grid-3">
+              {userProfile.skills.map((skill, idx) => {
+                const isExp = expandedSkill === skill;
+                return (
+                  <div 
+                    key={idx}
+                    onClick={() => setExpandedSkill(isExp ? null : skill)}
+                    style={{
+                      background: 'rgba(255, 255, 255, 0.02)',
+                      border: '1px solid var(--border-subtle)',
+                      borderRadius: 'var(--radius-md)',
+                      padding: '16px',
+                      cursor: 'pointer',
+                      transition: 'var(--transition)'
+                    }}
+                  >
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                      <span style={{ fontWeight: '700', fontSize: '0.95rem' }}>{skill}</span>
+                      {isExp ? <ChevronUp size={16} color="var(--secondary)" /> : <ChevronDown size={16} color="var(--text-dim)" />}
                     </div>
-                    <button 
-                      onClick={() => setExpandedSkill(isExpanded ? null : skill)}
-                      className="btn btn-secondary btn-sm"
-                      style={{ padding: '4px 10px', fontSize: '0.78rem' }}
-                    >
-                      {isExpanded ? <ChevronUp size={14} /> : <ChevronDown size={14} />} Evidence
-                    </button>
-                  </div>
 
-                  {isExpanded && (
-                    <div style={{ marginTop: '12px', paddingTop: '12px', borderTop: '1px solid var(--border-subtle)', fontSize: '0.8rem', color: 'var(--text-muted)' }}>
-                      <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '6px' }}>
-                        <span>Project Proofs:</span>
-                        <strong style={{ color: '#fff' }}>{projects.filter(p => p.techStack?.includes(skill)).length} projects</strong>
+                    {isExp && (
+                      <div style={{ marginTop: '12px', paddingTop: '10px', borderTop: '1px solid var(--border-subtle)', fontSize: '0.78rem', color: 'var(--text-muted)' }}>
+                        <div>Status: <span style={{ color: 'var(--emerald)', fontWeight: '700' }}>Active in Matrix</span></div>
+                        <div style={{ marginTop: '4px' }}>Linked Projects: {projects.filter(p => p.techStack?.includes(skill)).length}</div>
                       </div>
-                      <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                        <span>Interview Evaluations:</span>
-                        <strong style={{ color: '#fff' }}>{interviews.length} sessions</strong>
-                      </div>
-                    </div>
-                  )}
-                </div>
-              );
-            })}
-          </div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          )}
         </div>
       )}
 
       {/* TAB: PROJECTS */}
       {activeTab === 'projects' && (
-        <div className="responsive-grid-2">
+        <div className="glass-card" style={{ padding: '24px' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
+            <h3 style={{ fontSize: '1.2rem', fontWeight: '800', margin: 0 }}>Proof of Work Projects ({projects.length})</h3>
+            <Link to="/studio" className="btn btn-primary btn-sm">
+              <Plus size={14} /> Open Project Studio
+            </Link>
+          </div>
+
           {projects.length === 0 ? (
-            <div className="glass-card" style={{ padding: '32px', textAlign: 'center', gridColumn: '1 / -1' }}>
-              <FolderGit2 size={36} color="var(--text-dim)" style={{ margin: '0 auto 12px' }} />
-              <h3 style={{ fontSize: '1.1rem', marginBottom: '6px' }}>No verified projects yet</h3>
-              <p style={{ color: 'var(--text-muted)', fontSize: '0.85rem', marginBottom: '16px' }}>
-                Add your code projects to generate verifiable proof of work credentials.
+            <div style={{ textAlign: 'center', padding: '48px 0' }}>
+              <FolderGit2 size={40} color="var(--text-dim)" style={{ margin: '0 auto 12px' }} />
+              <p style={{ color: 'var(--text-muted)', fontSize: '0.9rem', marginBottom: '16px' }}>
+                No projects added yet. Build your first project in Project Studio to link Git verification.
               </p>
-              <Link to="/studio" className="btn btn-primary btn-sm">Open Project Studio</Link>
+              <Link to="/studio" className="btn btn-primary btn-sm">
+                <Plus size={14} /> Build Project
+              </Link>
             </div>
           ) : (
-            projects.map(p => (
-              <div key={p.id} className="glass-card" style={{ padding: '20px' }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '8px' }}>
-                  <h4 style={{ fontWeight: '800', fontSize: '1rem', margin: 0 }}>{p.title}</h4>
-                  <span className="badge badge-emerald" style={{ fontSize: '0.65rem' }}>✓ Verified</span>
+            <div className="responsive-grid-2">
+              {projects.map(p => (
+                <div key={p.id} style={{ background: 'rgba(255, 255, 255, 0.02)', border: '1px solid var(--border-subtle)', borderRadius: 'var(--radius-md)', padding: '18px' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px' }}>
+                    <h4 style={{ fontWeight: '700', fontSize: '1rem', margin: 0 }}>{p.title}</h4>
+                    <span className={`badge ${p.verificationStatus === 'verified' ? 'badge-emerald' : 'badge-amber'}`} style={{ fontSize: '0.65rem' }}>
+                      {p.verificationStatus}
+                    </span>
+                  </div>
+                  <p style={{ color: 'var(--text-muted)', fontSize: '0.82rem', marginBottom: '12px' }}>
+                    {p.tagline || p.description}
+                  </p>
+                  <div style={{ display: 'flex', gap: '4px', flexWrap: 'wrap' }}>
+                    {p.techStack?.map((t, i) => (
+                      <span key={i} className="badge badge-secondary" style={{ fontSize: '0.65rem' }}>{t}</span>
+                    ))}
+                  </div>
                 </div>
-                <p style={{ color: 'var(--text-muted)', fontSize: '0.82rem', marginBottom: '12px' }}>
-                  {p.tagline || p.description}
-                </p>
-                <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap', marginBottom: '14px' }}>
-                  {p.techStack?.map((t, idx) => (
-                    <span key={idx} className="badge badge-primary" style={{ fontSize: '0.65rem' }}>{t}</span>
-                  ))}
-                </div>
-                <Link to="/studio" className="btn btn-secondary btn-sm" style={{ width: '100%', justifyContent: 'center' }}>
-                  View in Studio
-                </Link>
-              </div>
-            ))
+              ))}
+            </div>
           )}
         </div>
       )}
 
-      {/* TAB: CREDENTIALS & READINESS */}
+      {/* TAB: CREDENTIALS & ROADMAP */}
       {activeTab === 'credentials' && (
-        <div className="responsive-grid-2">
-          <div className="glass-card" style={{ padding: '24px' }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '14px' }}>
-              <ShieldCheck size={20} color="var(--emerald)" />
-              <h3 style={{ fontSize: '1.1rem', fontWeight: '700', margin: 0 }}>Verified Identity Seal</h3>
-            </div>
-            <p style={{ fontSize: '0.85rem', color: 'var(--text-muted)', marginBottom: '16px' }}>
-              Your profile is cryptographically verified against your unique handle <strong>@{userProfile?.username}</strong>.
-            </p>
-            <div style={{ background: 'rgba(255,255,255,0.02)', padding: '14px', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border-subtle)' }}>
-              <div style={{ fontSize: '0.75rem', color: 'var(--text-dim)', textTransform: 'uppercase' }}>Public Passport URL</div>
-              <div style={{ fontSize: '0.82rem', color: 'var(--secondary)', wordBreak: 'break-all', marginTop: '4px' }}>
-                {passportUrl}
+        <div className="glass-card" style={{ padding: '24px' }}>
+          <h3 style={{ fontSize: '1.2rem', fontWeight: '800', marginBottom: '16px' }}>Action Roadmap to Boost Score</h3>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+            {readiness.recommendations.map((rec, i) => (
+              <div key={i} style={{ background: 'rgba(255, 255, 255, 0.02)', padding: '16px', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border-subtle)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '12px' }}>
+                <div>
+                  <div style={{ fontWeight: '700', fontSize: '0.95rem' }}>{rec.title}</div>
+                  <div style={{ color: 'var(--text-muted)', fontSize: '0.82rem' }}>{rec.description}</div>
+                </div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                  <span className="badge badge-emerald">{rec.impact}</span>
+                  <Link to={rec.actionUrl} className="btn btn-secondary btn-sm">
+                    Execute
+                  </Link>
+                </div>
               </div>
-            </div>
-          </div>
-
-          <div className="glass-card" style={{ padding: '24px' }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '14px' }}>
-              <Sparkles size={20} color="var(--primary)" />
-              <h3 style={{ fontSize: '1.1rem', fontWeight: '700', margin: 0 }}>AI Scoring Milestones</h3>
-            </div>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', fontSize: '0.85rem' }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', color: projects.length >= 2 ? 'var(--emerald)' : 'var(--text-muted)' }}>
-                <CheckCircle size={16} /> 2+ Verified Projects ({projects.length}/2)
-              </div>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', color: resumes.length >= 1 ? 'var(--emerald)' : 'var(--text-muted)' }}>
-                <CheckCircle size={16} /> ATS Tailored Resume ({resumes.length}/1)
-              </div>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', color: interviews.length >= 1 ? 'var(--emerald)' : 'var(--text-muted)' }}>
-                <CheckCircle size={16} /> AI Voice Mock Interview ({interviews.length}/1)
-              </div>
-            </div>
+            ))}
           </div>
         </div>
       )}
 
-      {/* QR Code Verification Modal */}
+      {/* 4. QR CODE MODAL */}
       {showQrModal && (
-        <div className="nav-drawer-overlay" onClick={() => setShowQrModal(false)} style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '16px' }}>
-          <div className="glass-card" onClick={e => e.stopPropagation()} style={{ width: '100%', maxWidth: '380px', padding: '28px', textAlign: 'center' }}>
+        <div className="nav-drawer-overlay" onClick={() => setShowQrModal(false)}>
+          <div className="glass-card" onClick={(e) => e.stopPropagation()} style={{ maxWidth: '360px', margin: 'auto', padding: '28px', textAlign: 'center' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
-              <h3 style={{ fontSize: '1.15rem', fontWeight: '800', margin: 0 }}>Career Passport QR</h3>
+              <h3 style={{ fontSize: '1.1rem', fontWeight: '800', margin: 0 }}>Career Passport QR</h3>
               <button onClick={() => setShowQrModal(false)} style={{ background: 'transparent', border: 'none', color: 'var(--text-muted)', cursor: 'pointer' }}>
-                <X size={20} />
+                <X size={18} />
               </button>
             </div>
-
-            {/* QR Code SVG Visual */}
-            <div style={{
-              width: '180px',
-              height: '180px',
-              margin: '0 auto 20px',
-              background: '#ffffff',
-              borderRadius: '12px',
-              padding: '12px',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              boxShadow: '0 8px 24px rgba(0,0,0,0.5)'
-            }}>
+            
+            <div style={{ background: '#fff', padding: '16px', borderRadius: '8px', display: 'inline-block', marginBottom: '16px' }}>
               <img 
-                src={`https://api.qrserver.com/v1/create-qr-code/?size=160x160&data=${encodeURIComponent(passportUrl)}`} 
+                src={`https://api.qrserver.com/v1/create-qr-code/?size=180x180&data=${encodeURIComponent(passportUrl)}`}
                 alt="QR Code" 
-                style={{ width: '100%', height: '100%' }}
+                style={{ width: '180px', height: '180px', display: 'block' }}
               />
             </div>
 
-            <p style={{ fontSize: '0.85rem', color: 'var(--text-muted)', marginBottom: '16px' }}>
-              Scan to view @{userProfile?.username}'s verified public profile and credentials.
+            <p style={{ fontSize: '0.8rem', color: 'var(--text-muted)', margin: 0 }}>
+              Scan to verify developer credentials on mobile device.
             </p>
-
-            <button onClick={handleSharePassport} className="btn btn-primary btn-sm" style={{ width: '100%', justifyContent: 'center' }}>
-              Copy Passport Link
-            </button>
           </div>
         </div>
       )}

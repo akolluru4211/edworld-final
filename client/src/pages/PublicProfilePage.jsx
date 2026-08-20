@@ -19,6 +19,7 @@ import { getPublicProfileByUsername, sendConnectionRequest } from '../services/f
 import { useAuth } from '../context/AuthContext';
 import { useNotification } from '../context/NotificationContext';
 import BrandLogo from '../components/common/BrandLogo';
+import UserAvatar from '../components/common/UserAvatar';
 
 export default function PublicProfilePage() {
   const { username } = useParams();
@@ -128,22 +129,23 @@ export default function PublicProfilePage() {
       }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: '16px', marginBottom: '24px' }}>
           <div style={{ display: 'flex', gap: '16px', alignItems: 'center' }}>
-            <img 
-              src={profile.photoURL || `https://api.dicebear.com/7.x/bottts/svg?seed=${profile.username}`} 
-              alt={profile.displayName} 
-              className="avatar" 
-              style={{ width: '72px', height: '72px', borderWidth: '3px', borderRadius: '50%', flexShrink: 0 }}
+            <UserAvatar 
+              name={profile.displayName} 
+              photoURL={profile.photoURL} 
+              size={72} 
             />
             <div>
               <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                 <h1 style={{ fontSize: '1.6rem', fontWeight: '800', margin: 0 }}>{profile.displayName}</h1>
                 <span className="badge badge-primary" style={{ fontSize: '0.68rem' }}>✓ Verified</span>
               </div>
-              <p style={{ color: 'var(--secondary)', fontWeight: '700', fontSize: '0.95rem', margin: '2px 0 4px' }}>
-                {profile.headline || 'Software Engineer'}
-              </p>
+              {profile.headline && (
+                <p style={{ color: 'var(--secondary)', fontWeight: '700', fontSize: '0.95rem', margin: '2px 0 4px' }}>
+                  {profile.headline}
+                </p>
+              )}
               <div style={{ color: 'var(--text-muted)', fontSize: '0.82rem' }}>
-                {profile.college} · @{profile.username}
+                {profile.college ? `${profile.college} · ` : ''}@{profile.username}
               </div>
             </div>
           </div>
@@ -162,28 +164,36 @@ export default function PublicProfilePage() {
         </div>
 
         {/* Career Score Gauge & Target */}
-        <div style={{ background: 'rgba(0, 0, 0, 0.4)', padding: '16px 20px', borderRadius: 'var(--radius-md)', marginBottom: '24px', border: '1px solid var(--border-subtle)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '12px' }}>
-          <div>
-            <div style={{ fontSize: '0.72rem', color: 'var(--text-dim)', fontWeight: '700', textTransform: 'uppercase' }}>Target Role</div>
-            <div style={{ fontSize: '1rem', fontWeight: '800', color: '#fff' }}>{profile.careerGoal || 'Full Stack Software Engineer'}</div>
+        {(profile.careerGoal || (profile.careerScore !== undefined && profile.careerScore !== null)) && (
+          <div style={{ background: 'rgba(0, 0, 0, 0.4)', padding: '16px 20px', borderRadius: 'var(--radius-md)', marginBottom: '24px', border: '1px solid var(--border-subtle)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '12px' }}>
+            {profile.careerGoal && (
+              <div>
+                <div style={{ fontSize: '0.72rem', color: 'var(--text-dim)', fontWeight: '700', textTransform: 'uppercase' }}>Target Role</div>
+                <div style={{ fontSize: '1rem', fontWeight: '800', color: '#fff' }}>{profile.careerGoal}</div>
+              </div>
+            )}
+            {profile.careerScore !== undefined && profile.careerScore !== null && (
+              <div style={{ textAlign: 'right' }}>
+                <div style={{ fontSize: '0.72rem', color: 'var(--text-dim)', fontWeight: '700', textTransform: 'uppercase' }}>Career Readiness Score</div>
+                <div style={{ fontSize: '1.5rem', fontWeight: '800', color: 'var(--emerald)' }}>{profile.careerScore} / 100</div>
+              </div>
+            )}
           </div>
-          <div style={{ textAlign: 'right' }}>
-            <div style={{ fontSize: '0.72rem', color: 'var(--text-dim)', fontWeight: '700', textTransform: 'uppercase' }}>Career Readiness Score</div>
-            <div style={{ fontSize: '1.5rem', fontWeight: '800', color: 'var(--emerald)' }}>{profile.careerScore || 78} / 100</div>
-          </div>
-        </div>
+        )}
 
         {/* Verified Skills */}
-        <div style={{ marginBottom: '24px' }}>
-          <h3 style={{ fontSize: '1rem', fontWeight: '700', marginBottom: '10px' }}>Verified Skills Matrix</h3>
-          <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
-            {(profile.skills || ['React', 'JavaScript', 'Node.js']).map((s, idx) => (
-              <span key={idx} className="badge badge-primary" style={{ padding: '6px 12px', fontSize: '0.78rem' }}>
-                ✓ {s}
-              </span>
-            ))}
+        {profile.skills && profile.skills.length > 0 && (
+          <div style={{ marginBottom: '24px' }}>
+            <h3 style={{ fontSize: '1rem', fontWeight: '700', marginBottom: '10px' }}>Verified Skills Matrix</h3>
+            <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
+              {profile.skills.map((s, idx) => (
+                <span key={idx} className="badge badge-primary" style={{ padding: '6px 12px', fontSize: '0.78rem' }}>
+                  ✓ {s}
+                </span>
+              ))}
+            </div>
           </div>
-        </div>
+        )}
 
         {/* Proof of Work Projects */}
         <div>
@@ -209,7 +219,7 @@ export default function PublicProfilePage() {
                     )}
                   </div>
                   <p style={{ color: 'var(--text-muted)', fontSize: '0.82rem', marginBottom: '10px' }}>
-                    {p.tagline || p.description?.slice(0, 80)}
+                    {p.tagline || p.description}
                   </p>
                   <div style={{ display: 'flex', gap: '4px', flexWrap: 'wrap', marginBottom: '10px' }}>
                     {p.techStack?.map((t, i) => (

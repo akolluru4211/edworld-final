@@ -179,8 +179,7 @@ export default function OnboardingPage() {
         careerGoal,
         skills,
         bio: bio.trim(),
-        photoURL: photoURL || `https://api.dicebear.com/7.x/bottts/svg?seed=${username}`,
-        careerScore: 68
+        photoURL: photoURL || ''
       });
 
       showToast('🎉 Welcome to EdWorld Co.! Your Career Identity is activated.');

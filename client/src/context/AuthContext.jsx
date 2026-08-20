@@ -243,7 +243,7 @@ export function AuthProvider({ children }) {
       const fullProfileData = {
         ...profileData,
         email: firebaseUser.email || profileData.email || '',
-        photoURL: profileData.photoURL || firebaseUser.photoURL || `https://api.dicebear.com/7.x/bottts/svg?seed=${profileData.username}`,
+        photoURL: profileData.photoURL || firebaseUser.photoURL || '',
         profileCompleted: true,
         networkVisibility: true
       };

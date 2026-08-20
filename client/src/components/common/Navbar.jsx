@@ -22,6 +22,7 @@ import {
   Search
 } from 'lucide-react';
 import BrandLogo from './BrandLogo';
+import UserAvatar from './UserAvatar';
 import { useAuth } from '../../context/AuthContext';
 import { useNotification } from '../../context/NotificationContext';
 
@@ -157,11 +158,10 @@ export default function Navbar() {
                   style={{ background: 'transparent', border: 'none', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '8px', minHeight: '44px' }}
                   aria-label="User profile menu"
                 >
-                  <img 
-                    src={profile?.photoURL || `https://api.dicebear.com/7.x/bottts/svg?seed=${profile?.username || 'dev'}`} 
-                    alt={profile?.displayName || 'User'} 
-                    className="avatar" 
-                    style={{ width: '36px', height: '36px', borderRadius: '50%', border: '1px solid var(--border-glow)' }}
+                  <UserAvatar 
+                    name={profile?.displayName} 
+                    photoURL={profile?.photoURL} 
+                    size={36} 
                   />
                 </button>
 
@@ -180,11 +180,15 @@ export default function Navbar() {
                     animation: 'modalEnter 0.15s ease-out'
                   }}>
                     <div style={{ padding: '12px 16px', borderBottom: '1px solid var(--border-subtle)' }}>
-                      <div style={{ fontWeight: '700', fontSize: '0.92rem' }}>{profile?.displayName || 'Developer'}</div>
-                      <div style={{ fontSize: '0.78rem', color: 'var(--secondary)' }}>@{profile?.username || 'user'}</div>
-                      <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginTop: '4px' }}>
-                        Career Readiness: <strong style={{ color: 'var(--emerald)' }}>{profile?.careerScore || 70}/100</strong>
-                      </div>
+                      <div style={{ fontWeight: '700', fontSize: '0.92rem' }}>{profile?.displayName}</div>
+                      {profile?.username && (
+                        <div style={{ fontSize: '0.78rem', color: 'var(--secondary)' }}>@{profile.username}</div>
+                      )}
+                      {profile?.careerScore !== undefined && profile?.careerScore !== null && (
+                        <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginTop: '4px' }}>
+                          Career Readiness: <strong style={{ color: 'var(--emerald)' }}>{profile.careerScore}/100</strong>
+                        </div>
+                      )}
                     </div>
 
                     <Link 
@@ -288,25 +292,29 @@ export default function Navbar() {
                   color: 'var(--text-main)'
                 }}
               >
-                <img 
-                  src={profile?.photoURL || `https://api.dicebear.com/7.x/bottts/svg?seed=${profile?.username || 'dev'}`} 
-                  alt={profile?.displayName}
-                  style={{ width: '42px', height: '42px', borderRadius: '50%', border: '2px solid var(--primary)' }}
+                <UserAvatar 
+                  name={profile?.displayName} 
+                  photoURL={profile?.photoURL} 
+                  size={42} 
                 />
                 <div style={{ flex: 1, minWidth: 0 }}>
                   <div style={{ fontWeight: '800', fontSize: '0.92rem', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                    {profile?.displayName || 'Developer'}
+                    {profile?.displayName}
                   </div>
-                  <div style={{ fontSize: '0.78rem', color: 'var(--secondary)' }}>
-                    @{profile?.username || 'user'}
-                  </div>
+                  {profile?.username && (
+                    <div style={{ fontSize: '0.78rem', color: 'var(--secondary)' }}>
+                      @{profile.username}
+                    </div>
+                  )}
                 </div>
-                <div style={{ textAlign: 'right' }}>
-                  <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>Score</div>
-                  <div style={{ fontSize: '0.95rem', fontWeight: '800', color: 'var(--emerald)' }}>
-                    {profile?.careerScore || 70}
+                {profile?.careerScore !== undefined && profile?.careerScore !== null && (
+                  <div style={{ textAlign: 'right' }}>
+                    <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>Score</div>
+                    <div style={{ fontSize: '0.95rem', fontWeight: '800', color: 'var(--emerald)' }}>
+                      {profile.careerScore}
+                    </div>
                   </div>
-                </div>
+                )}
               </Link>
             )}
 

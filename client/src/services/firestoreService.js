@@ -104,28 +104,28 @@ export async function claimUsernameAndCreateProfile(uid, profileData) {
     const baseData = {
       uid,
       username,
-      displayName: profileData.displayName || 'Developer',
+      displayName: profileData.displayName || '',
       email: profileData.email || '',
-      photoURL: profileData.photoURL || `https://api.dicebear.com/7.x/bottts/svg?seed=${username}`,
-      headline: profileData.headline || 'Aspiring Software Engineer',
+      photoURL: profileData.photoURL || '',
+      headline: profileData.headline || '',
       bio: profileData.bio || '',
       college: profileData.college || '',
       degree: profileData.degree || '',
       branch: profileData.branch || '',
-      gradYear: profileData.gradYear || new Date().getFullYear().toString(),
+      gradYear: profileData.gradYear || '',
       location: profileData.location || '',
-      careerGoal: profileData.careerGoal || 'Full Stack Engineer',
-      skills: profileData.skills || ['JavaScript', 'React', 'Problem Solving'],
+      careerGoal: profileData.careerGoal || '',
+      skills: profileData.skills || [],
       experience: profileData.experience || [],
       education: profileData.education || [],
       github: profileData.github || '',
       linkedin: profileData.linkedin || '',
       portfolioUrl: profileData.portfolioUrl || '',
-      careerScore: profileData.careerScore || 65,
-      role: profileData.role || 'student', // 'student' | 'admin' | 'evaluator' | 'mentor'
+      careerScore: profileData.careerScore !== undefined ? profileData.careerScore : null,
+      role: profileData.role || 'student',
       status: 'active',
-      privacy: profileData.privacy || 'public', // 'public' | 'network' | 'private'
-      onboarded: true,
+      privacy: profileData.privacy || 'public',
+      profileCompleted: true,
       updatedAt: serverTimestamp()
     };
 
@@ -262,34 +262,30 @@ export async function getUserProjects(uid) {
   }
 }
 
-export async function createProject(projectData) {
+export async function createProject(uid, projectData) {
   const newRef = doc(collection(db, 'projects'));
   const payload = {
     id: newRef.id,
-    ownerId: projectData.ownerId,
-    ownerName: projectData.ownerName || 'Developer',
+    ownerId: uid,
+    ownerName: projectData.ownerName || '',
     ownerAvatar: projectData.ownerAvatar || '',
-    title: projectData.title,
+    title: projectData.title || '',
     tagline: projectData.tagline || '',
     description: projectData.description || '',
-    techStack: projectData.techStack || ['React', 'Node.js'],
+    techStack: projectData.techStack || [],
     githubRepo: projectData.githubRepo || '',
     liveUrl: projectData.liveUrl || '',
-    lookingFor: projectData.lookingFor || ['Frontend Developer'],
-    stage: projectData.stage || 'Build', // Ideation -> Validation -> Requirements -> Architecture -> Build -> Testing -> Deployment -> Verification
-    verificationStatus: 'unverified', // 'unverified' | 'pending' | 'verified'
+    lookingFor: projectData.lookingFor || [],
+    stage: projectData.stage || 'Build',
+    verificationStatus: 'unverified',
     verificationScore: 0,
     verificationEvidence: null,
     kanban: projectData.kanban || {
-      todo: [
-        { id: 'k1', title: 'Initialize Git repository and README documentation', priority: 'High', assignee: projectData.ownerName }
-      ],
-      in_progress: [
-        { id: 'k2', title: 'Implement Core Feature Architecture', priority: 'High', assignee: projectData.ownerName }
-      ],
+      todo: [],
+      inProgress: [],
       done: []
     },
-    scratchpad: projectData.scratchpad || `// Project Sandbox for ${projectData.title}\nconsole.log("EdWorld Studio Engine Active!");`,
+    scratchpad: projectData.scratchpad || `// Project Sandbox for ${projectData.title}`,
     createdAt: serverTimestamp(),
     updatedAt: serverTimestamp()
   };

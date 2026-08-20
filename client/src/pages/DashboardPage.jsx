@@ -111,7 +111,7 @@ export default function DashboardPage() {
               </span>
             </div>
             <h1 style={{ fontSize: '1.9rem', fontWeight: '800', marginBottom: '4px' }}>
-              Welcome, {userProfile?.displayName?.split(' ')[0] || 'Developer'} 👋
+              Welcome{userProfile?.displayName ? `, ${userProfile.displayName.split(' ')[0]}` : ''} 👋
             </h1>
             <p style={{ color: 'var(--text-muted)', fontSize: '0.9rem', maxWidth: '580px', margin: 0 }}>
               Targeting <strong style={{ color: '#fff' }}>{userProfile?.careerGoal || 'Full Stack Software Engineer'}</strong> at {userProfile?.college || 'Institution'}.

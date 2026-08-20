@@ -288,6 +288,36 @@ export default function InterviewPage() {
               <Play size={18} /> Start AI Interview Session
             </button>
           </div>
+
+          {/* Past Real Interview History */}
+          <div className="glass-card" style={{ padding: '24px' }}>
+            <h3 style={{ fontSize: '1.15rem', fontWeight: '800', marginBottom: '16px', borderBottom: '1px solid var(--border-subtle)', paddingBottom: '10px' }}>
+              Past Interview Sessions ({interviewsHistory.length})
+            </h3>
+
+            {interviewsHistory.length === 0 ? (
+              <div style={{ textAlign: 'center', padding: '28px 0', color: 'var(--text-muted)' }}>
+                <p style={{ fontSize: '0.88rem' }}>No past mock interviews completed yet. Complete your first session to receive dimensional scorecards!</p>
+              </div>
+            ) : (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                {interviewsHistory.map((s, idx) => (
+                  <div key={s.id || idx} style={{ background: 'rgba(255,255,255,0.02)', padding: '14px 18px', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border-subtle)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '12px' }}>
+                    <div>
+                      <div style={{ fontWeight: '700', fontSize: '0.95rem' }}>{s.track} Interview ({s.difficulty})</div>
+                      <div style={{ fontSize: '0.78rem', color: 'var(--text-muted)' }}>{s.completedAt ? new Date(s.completedAt).toLocaleDateString() : 'Completed'}</div>
+                    </div>
+
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                      <span className="badge badge-emerald" style={{ fontSize: '0.85rem' }}>
+                        {s.overallScore || s.scores?.overall || 0} / 100
+                      </span>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
         </div>
       )}
 
