@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useState, useEffect } from 'react';
+import React, { createContext, useContext, useState, useEffect, useRef } from 'react';
 import { 
   auth, 
   googleProvider, 
@@ -30,6 +30,7 @@ export function AuthProvider({ children }) {
   const [profileLoading, setProfileLoading] = useState(false);
   const [profile, setProfile] = useState(null);
   const [authError, setAuthError] = useState(null);
+  const fetchingProfileUid = useRef(null);
 
   // Diagnostic logger (development only)
   const logAuth = (stage, details = {}) => {
@@ -38,13 +39,19 @@ export function AuthProvider({ children }) {
     }
   };
 
-  // Safe fetch/create profile from Firestore
+  // Safe fetch/create profile from Firestore with deduplication
   const fetchAndSetProfile = async (fbUser) => {
     if (!fbUser || !fbUser.uid) {
       setProfile(null);
       setProfileLoading(false);
       return null;
     }
+
+    if (fetchingProfileUid.current === fbUser.uid) {
+      return profile;
+    }
+
+    fetchingProfileUid.current = fbUser.uid;
     setProfileLoading(true);
     logAuth('Fetching Firestore profile for UID:', { uid: fbUser.uid });
     try {
@@ -61,15 +68,16 @@ export function AuthProvider({ children }) {
       setProfile(null);
       return null;
     } finally {
+      fetchingProfileUid.current = null;
       setProfileLoading(false);
     }
   };
 
   // Global Auth Observer
   useEffect(() => {
-    logAuth('Subscribing to onAuthStateChanged');
+    logAuth('Subscribing to onAuthStateChanged & checking redirect result');
     
-    // Check for redirect auth results (mobile browsers)
+    // Check for redirect auth results (mobile browsers & redirect fallbacks)
     getRedirectResult(auth).then(async (result) => {
       if (result?.user) {
         logAuth('Redirect sign-in resolved', { uid: result.user.uid });
@@ -100,15 +108,15 @@ export function AuthProvider({ children }) {
     const code = err?.code || '';
     switch (code) {
       case 'auth/popup-closed-by-user':
-        return 'Google sign-in popup was closed before completing.';
+        return 'Google sign-in popup was closed before completing. Please try again.';
       case 'auth/popup-blocked':
-        return 'Google sign-in popup was blocked by your browser. Please allow popups for this site.';
+        return 'Google sign-in popup was blocked by your browser. Please allow popups or use redirect.';
       case 'auth/cancelled-popup-request':
         return 'Sign-in request was cancelled.';
       case 'auth/account-exists-with-different-credential':
         return 'An account already exists with this email using another sign-in method.';
       case 'auth/unauthorized-domain':
-        return 'This domain is not authorized in Firebase Console for OAuth. Please check Firebase authorized domains.';
+        return 'This domain is not authorized in Firebase Console. Please add ' + (typeof window !== 'undefined' ? window.location.hostname : 'domain') + ' to Firebase authorized domains.';
       case 'auth/network-request-failed':
         return 'Network error. Please check your internet connection and try again.';
       case 'auth/user-disabled':
@@ -128,19 +136,32 @@ export function AuthProvider({ children }) {
 
   /**
    * Google Sign-In Handler
-   * ONLY authenticates and gets/creates minimal Firestore profile.
-   * Returns destination path resolved via central resolveUserRoute.
+   * Resilient implementation: Uses popup on desktop with automatic redirect fallback,
+   * and direct redirect on mobile/tablets to prevent popup blocker failures.
    */
   const loginWithGoogle = async () => {
     setAuthError(null);
     logAuth('Google OAuth initiated');
+    const isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
+
     try {
       let result;
+      if (isMobile) {
+        logAuth('Mobile detected, initiating signInWithRedirect');
+        await signInWithRedirect(auth, googleProvider);
+        return { firebaseUser: null, profile: null, destination: '/onboarding', isNewUser: true };
+      }
+
       try {
         result = await signInWithPopup(auth, googleProvider);
       } catch (popupErr) {
-        if (popupErr.code === 'auth/popup-blocked') {
-          logAuth('Popup blocked, falling back to signInWithRedirect');
+        if (
+          popupErr.code === 'auth/popup-blocked' || 
+          popupErr.code === 'auth/popup-closed-by-user' ||
+          popupErr.code === 'auth/cancelled-popup-request' ||
+          popupErr.code === 'auth/internal-error'
+        ) {
+          logAuth('Popup failed or blocked, falling back to signInWithRedirect', { code: popupErr.code });
           await signInWithRedirect(auth, googleProvider);
           return { firebaseUser: null, profile: null, destination: '/onboarding', isNewUser: true };
         }
@@ -153,7 +174,7 @@ export function AuthProvider({ children }) {
       const destination = resolveUserRoute(fbUser, userProf);
       const isNewUser = !userProf || userProf.profileCompleted !== true;
 
-      logAuth('Google OAuth finished, central route decision:', {
+      logAuth('Google OAuth finished successfully:', {
         uid: fbUser.uid,
         isNewUser,
         destination
@@ -232,8 +253,6 @@ export function AuthProvider({ children }) {
 
   /**
    * Complete Onboarding Profile
-   * Writes Firestore private and public documents, verifies write,
-   * updates AuthContext state immediately, and flags profile completed.
    */
   const completeOnboarding = async (profileData) => {
     if (!firebaseUser) {
@@ -263,7 +282,7 @@ export function AuthProvider({ children }) {
   };
 
   /**
-   * Sign Out — Clears all cached user and profile states cleanly to prevent multi-user leaks
+   * Sign Out — Clears all cached user and profile states cleanly
    */
   const logout = async () => {
     logAuth('Signing out user');
@@ -315,7 +334,6 @@ export function AuthProvider({ children }) {
   const loading = authLoading || profileLoading;
 
   const value = {
-    // Exact requested state taxonomy
     authLoading,
     firebaseUser,
     profileLoading,
@@ -324,14 +342,10 @@ export function AuthProvider({ children }) {
     isProfileComplete,
     isNewUser: Boolean(firebaseUser && !isProfileComplete),
     authError,
-    
-    // Backwards compatibility aliases
     user: firebaseUser,
     userProfile: profile,
     loading,
     profileCompleted: isProfileComplete,
-
-    // Methods
     loginWithGoogle,
     loginWithEmail,
     signupWithEmail,
@@ -359,9 +373,6 @@ export function useAuth() {
   return context;
 }
 
-/**
- * Canonical hook for consuming authenticated profile state (Requirement 21)
- */
 export function useCurrentUserProfile() {
   const { firebaseUser, profile, loading, authError } = useAuth();
   return {

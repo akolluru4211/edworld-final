@@ -10,7 +10,9 @@ import {
   signOut, 
   sendPasswordResetEmail,
   updateProfile,
-  onAuthStateChanged 
+  onAuthStateChanged,
+  setPersistence,
+  browserLocalPersistence
 } from 'firebase/auth';
 import { 
   getFirestore 
@@ -31,7 +33,18 @@ const firebaseConfig = {
 const app = getApps().length > 0 ? getApp() : initializeApp(firebaseConfig);
 
 export const auth = getAuth(app);
+
+// Enable local persistence for auth state
+try {
+  setPersistence(auth, browserLocalPersistence);
+} catch (e) {
+  console.warn('Firebase persistence warning:', e);
+}
+
+// Google OAuth Provider Configuration
 export const googleProvider = new GoogleAuthProvider();
+googleProvider.addScope('email');
+googleProvider.addScope('profile');
 googleProvider.setCustomParameters({ prompt: 'select_account' });
 
 export const db = getFirestore(app);
