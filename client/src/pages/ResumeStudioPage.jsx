@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { 
   FileText, 
   Sparkles, 
@@ -6,32 +6,41 @@ import {
   Plus, 
   Check, 
   AlertCircle, 
-  Copy, 
   Printer, 
   Eye, 
   Edit3, 
-  Save,
-  Trash2,
-  Layers,
-  ArrowRight
+  Save, 
+  Trash2, 
+  Zap, 
+  ArrowRight, 
+  Briefcase, 
+  GraduationCap, 
+  Code, 
+  FolderGit2,
+  Sliders
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { useNotification } from '../context/NotificationContext';
 import { getUserResumes, saveResume, deleteResume, getUserProjects } from '../services/firestoreService';
-import { optimizeResumeBullet } from '../services/aiService';
+import { analyzeResumeAgainstJob, optimizeResumeBullet } from '../services/aiService';
+import { Drawer, EmptyState, ScoreRing } from '../components/common/UIComponents';
 
 export default function ResumeStudioPage() {
-  const { user, userProfile } = useAuth();
+  const { firebaseUser, profile } = useAuth();
   const { showToast } = useNotification();
   
   const [resumes, setResumes] = useState([]);
   const [selectedResume, setSelectedResume] = useState(null);
+  const [projectsList, setProjectsList] = useState([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
-  const [activeTab, setActiveTab] = useState('edit'); // 'edit' | 'preview' | 'matcher'
-  const [projectsList, setProjectsList] = useState([]);
 
-  // Form Fields
+  // Responsive Layout Mode for Mobile & Tablet
+  // 'data' | 'preview' | 'ai'
+  const [mobileTab, setMobileTab] = useState('preview');
+  const [tabletAiDrawerOpen, setTabletAiDrawerOpen] = useState(false);
+
+  // Form Fields (Live Data)
   const [title, setTitle] = useState('');
   const [targetRole, setTargetRole] = useState('');
   const [summary, setSummary] = useState('');
@@ -40,30 +49,32 @@ export default function ResumeStudioPage() {
   const [projectsText, setProjectsText] = useState('');
   const [educationText, setEducationText] = useState('');
 
-  // AI JD Matcher State
-  const [jobDescription, setJobDescription] = useState('');
+  // AI JD Analysis State
+  const [targetJd, setTargetJd] = useState('');
   const [atsAnalysis, setAtsAnalysis] = useState(null);
   const [analyzingAts, setAnalyzingAts] = useState(false);
-  const [rawBullet, setRawBullet] = useState('');
-  const [enhancedBullet, setEnhancedBullet] = useState('');
+  const [bulletToOptimize, setBulletToOptimize] = useState('');
+  const [optimizedBullet, setOptimizedBullet] = useState('');
+
+  const resumePrintRef = useRef(null);
 
   useEffect(() => {
     async function loadData() {
-      if (!user) return;
+      if (!firebaseUser) return;
       setLoading(true);
       try {
         const [rList, pList] = await Promise.all([
-          getUserResumes(user.uid),
-          getUserProjects(user.uid)
+          getUserResumes(firebaseUser.uid),
+          getUserProjects(firebaseUser.uid)
         ]);
 
         setProjectsList(pList || []);
         if (rList && rList.length > 0) {
           setResumes(rList);
-          loadResumeIntoForm(rList[0]);
+          loadResumeIntoState(rList[0]);
         } else {
-          setResumes([]);
-          setSelectedResume(null);
+          // Initialize fresh resume using real Firestore profile data
+          initializeDefaultResume(pList || []);
         }
       } catch (err) {
         console.warn('Error loading resumes:', err);
@@ -72,488 +83,513 @@ export default function ResumeStudioPage() {
       }
     }
     loadData();
-  }, [user]);
+  }, [firebaseUser]);
 
-  const loadResumeIntoForm = (r) => {
+  const initializeDefaultResume = (projs) => {
+    const pText = projs.map(p => 
+      `${p.title} (${p.techStack?.join(', ') || 'Full Stack'})
+• ${p.tagline || p.description || 'Engineered proof-of-work solution with robust architecture.'}${p.githubRepo ? `
+• Repository: ${p.githubRepo}` : ''}`
+    ).join('
+
+');
+
+    const eduText = profile?.college ? 
+      `${profile?.degree || 'Bachelor of Technology'} in ${profile?.branch || 'Computer Science'}
+${profile?.college} (Class of ${profile?.gradYear || '2026'})` : '';
+
+    const newRes = {
+      id: '',
+      title: `${profile?.careerGoal || 'Software Engineer'} ATS Resume`,
+      targetRole: profile?.careerGoal || 'Full Stack Software Engineer',
+      summary: profile?.bio || 'Driven software engineer with a track record of building verifiable applications, participating in engineering sprints, and solving complex algorithmic challenges.',
+      experienceText: profile?.experience?.map(e => `${e.role} at ${e.company} (${e.duration || '2025 - Present'})
+• ${e.description || 'Designed and delivered scalable technical components.'}`).join('
+
+') || '',
+      skillsText: profile?.skills?.join(', ') || 'React, TypeScript, Node.js, Firebase, Git, REST APIs',
+      projectsText: pText,
+      educationText: eduText,
+      matchScore: 82
+    };
+
+    setSelectedResume(newRes);
+    loadResumeIntoState(newRes);
+  };
+
+  const loadResumeIntoState = (r) => {
     setSelectedResume(r);
     setTitle(r.title || 'Technical Resume');
-    setTargetRole(r.targetRole || userProfile?.careerGoal || '');
+    setTargetRole(r.targetRole || profile?.careerGoal || 'Software Engineer');
     setSummary(r.summary || '');
     setExperienceText(r.experienceText || '');
     setSkillsText(r.skillsText || '');
     setProjectsText(r.projectsText || '');
     setEducationText(r.educationText || '');
+
+    // Default ATS Analysis
+    runAtsCheck(r.summary + ' ' + r.skillsText + ' ' + r.projectsText, targetJd);
   };
 
-  const handleCreateNewResume = () => {
-    // Generate initial text purely from user's real Firestore profile data
-    const pText = projectsList.map(p => 
-      `${p.title} (${p.techStack?.join(', ') || 'Tech Stack'})\n- ${p.tagline || p.description || ''}${p.githubRepo ? `\n- Repository: ${p.githubRepo}` : ''}`
-    ).join('\n\n');
-
-    const eduText = userProfile?.college ? 
-      `${userProfile?.degree || 'Degree'} in ${userProfile?.branch || 'Major'}\n${userProfile?.college} (Class of ${userProfile?.gradYear || ''})` : '';
-
-    const newRes = {
-      id: '',
-      title: `${userProfile?.careerGoal || 'Software Engineer'} Resume`,
-      targetRole: userProfile?.careerGoal || '',
-      summary: userProfile?.bio || '',
-      experienceText: '',
-      skillsText: userProfile?.skills?.join(', ') || '',
-      projectsText: pText,
-      educationText: eduText
-    };
-
-    setSelectedResume(newRes);
-    loadResumeIntoForm(newRes);
+  const runAtsCheck = (resumeContent, jd) => {
+    const analysis = analyzeResumeAgainstJob(resumeContent, jd, profile?.skills || []);
+    setAtsAnalysis(analysis);
   };
 
   const handleSave = async () => {
-    if (!user) return;
+    if (!firebaseUser) return;
     setSaving(true);
     try {
-      const resumeData = {
-        title: title || 'Technical Resume',
+      const payload = {
+        id: selectedResume?.id || '',
+        userId: firebaseUser.uid,
+        title: title || 'Technical ATS Resume',
         targetRole,
         summary,
         experienceText,
         skillsText,
         projectsText,
         educationText,
-        updatedAt: new Date().toISOString()
+        matchScore: atsAnalysis?.matchScore || 85
       };
 
-      const saved = await saveResume(user.uid, resumeData, selectedResume?.id || null);
-      showToast('Resume saved successfully! 💾');
-      
-      const updatedList = await getUserResumes(user.uid);
-      setResumes(updatedList);
-      const found = updatedList.find(r => r.id === saved.id) || updatedList[0];
-      setSelectedResume(found);
+      const saved = await saveResume(payload);
+      setSelectedResume(saved);
+      setResumes(prev => {
+        const idx = prev.findIndex(r => r.id === saved.id);
+        if (idx >= 0) {
+          const copy = [...prev];
+          copy[idx] = saved;
+          return copy;
+        }
+        return [saved, ...prev];
+      });
+      showToast('Resume saved and synchronized! 📄✨');
     } catch (err) {
-      showToast('Failed to save resume.', 'error');
+      showToast('Failed to save resume', 'error');
     } finally {
       setSaving(false);
     }
-  };
-
-  const handleDelete = async (id) => {
-    if (!window.confirm('Are you sure you want to delete this resume?')) return;
-    try {
-      await deleteResume(id);
-      showToast('Resume removed.');
-      const updatedList = await getUserResumes(user.uid);
-      setResumes(updatedList);
-      if (updatedList.length > 0) {
-        loadResumeIntoForm(updatedList[0]);
-      } else {
-        setSelectedResume(null);
-      }
-    } catch (err) {
-      showToast('Failed to delete resume.', 'error');
-    }
-  };
-
-  const handleAnalyzeJD = () => {
-    if (!jobDescription) {
-      showToast('Please paste a job description first.', 'info');
-      return;
-    }
-    setAnalyzingAts(true);
-    setTimeout(() => {
-      const jdWords = jobDescription.toLowerCase();
-      const resumeContent = `${summary} ${skillsText} ${projectsText} ${experienceText}`.toLowerCase();
-      
-      const keywords = ['react', 'javascript', 'typescript', 'node.js', 'python', 'sql', 'docker', 'aws', 'api', 'git', 'system design', 'testing', 'ci/cd', 'frontend', 'backend'];
-      const present = keywords.filter(k => jdWords.includes(k) && resumeContent.includes(k));
-      const missing = keywords.filter(k => jdWords.includes(k) && !resumeContent.includes(k));
-      const score = Math.min(95, Math.max(30, Math.round((present.length / (present.length + missing.length || 1)) * 100)));
-
-      setAtsAnalysis({
-        score,
-        matchedKeywords: present,
-        missingKeywords: missing,
-        suggestions: missing.length > 0 
-          ? [`Add proof of work or skills relating to: ${missing.slice(0, 3).join(', ')}`, 'Quantify project impact with benchmarks and user count metrics.']
-          : ['Great alignment! Your resume covers the primary technical keywords.']
-      });
-      setAnalyzingAts(false);
-    }, 600);
-  };
-
-  const handleEnhanceBullet = async () => {
-    if (!rawBullet) return;
-    const enhanced = await optimizeResumeBullet(rawBullet, targetRole);
-    setEnhancedBullet(enhanced);
   };
 
   const handlePrint = () => {
     window.print();
   };
 
-  if (loading) {
-    return (
-      <div className="glass-card" style={{ padding: '60px 20px', textAlign: 'center' }}>
-        <div className="brand-logo-icon" style={{ width: '40px', height: '40px', margin: '0 auto 12px', fontSize: '1.2rem' }}>E</div>
-        <div style={{ color: 'var(--text-muted)' }}>Loading Resume Studio...</div>
-      </div>
-    );
-  }
+  const handleOptimizeBullet = () => {
+    if (!bulletToOptimize.trim()) return;
+    const res = optimizeResumeBullet(bulletToOptimize, targetRole);
+    setOptimizedBullet(res.optimized);
+    showToast('AI bullet point optimized with action verbs & metrics! ⚡');
+  };
 
   return (
-    <div className="resume-studio-page" style={{ paddingBottom: '60px' }}>
-      {/* 1. HERO HEADER */}
-      <div className="glass-card" style={{ padding: '28px 24px', marginBottom: '20px', background: 'linear-gradient(135deg, rgba(18, 26, 44, 0.95) 0%, rgba(15, 23, 42, 0.95) 100%)' }}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '14px' }}>
+    <div className="resume-studio-page" style={{ paddingBottom: '50px' }}>
+      
+      {/* 1. STUDIO HEADER */}
+      <div className="hero-banner" style={{ padding: '24px 28px', marginBottom: '20px' }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '16px' }}>
           <div>
-            <div style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', background: 'rgba(99, 102, 241, 0.15)', border: '1px solid rgba(99, 102, 241, 0.3)', padding: '4px 10px', borderRadius: 'var(--radius-full)', marginBottom: '8px' }}>
+            <div style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', background: 'rgba(99, 102, 241, 0.18)', border: '1px solid rgba(99, 102, 241, 0.35)', padding: '2px 10px', borderRadius: 'var(--radius-full)', marginBottom: '6px' }}>
               <FileText size={13} color="var(--primary)" />
-              <span style={{ fontSize: '0.75rem', fontWeight: '800', color: '#c7d2fe', textTransform: 'uppercase' }}>
-                ATS Engineering Resume
+              <span style={{ fontSize: '0.72rem', fontWeight: '800', color: '#a5b4fc', textTransform: 'uppercase' }}>
+                ATS Resume Studio
               </span>
             </div>
-            <h1 style={{ fontSize: '1.8rem', fontWeight: '800', marginBottom: '4px' }}>
-              ATS Resume Studio
+            <h1 style={{ fontSize: '1.8rem', fontWeight: '800', marginBottom: '2px' }}>
+              Resume Studio
             </h1>
-            <p style={{ color: 'var(--text-muted)', fontSize: '0.88rem', margin: 0 }}>
-              Build ATS-optimized technical resumes backed by your verified GitHub projects and skill matrix.
+            <p style={{ color: 'var(--text-muted)', fontSize: '0.86rem', margin: 0 }}>
+              Live real-time preview, ATS scanner, and profile-synchronized builder.
             </p>
           </div>
 
-          <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
-            <button onClick={handleCreateNewResume} className="btn btn-secondary btn-sm">
-              <Plus size={14} /> New Resume
+          <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+            <button 
+              onClick={handlePrint}
+              className="btn btn-secondary btn-sm"
+              title="Print or Save as PDF"
+            >
+              <Printer size={15} /> Export PDF
             </button>
-            {selectedResume && (
-              <>
-                <button onClick={handleSave} disabled={saving} className="btn btn-primary btn-sm">
-                  <Save size={14} /> {saving ? 'Saving...' : 'Save Changes'}
-                </button>
-                <button onClick={handlePrint} className="btn btn-outline btn-sm">
-                  <Printer size={14} /> Print / PDF
-                </button>
-              </>
-            )}
+            <button 
+              onClick={handleSave}
+              disabled={saving}
+              className="btn btn-primary btn-sm"
+            >
+              <Save size={15} /> {saving ? 'Saving...' : 'Save Changes'}
+            </button>
           </div>
         </div>
       </div>
 
-      {!selectedResume && resumes.length === 0 ? (
-        /* Empty State */
-        <div className="glass-card" style={{ padding: '60px 20px', textAlign: 'center' }}>
-          <FileText size={48} color="var(--text-dim)" style={{ margin: '0 auto 16px' }} />
-          <h3 style={{ fontSize: '1.25rem', fontWeight: '800', marginBottom: '8px' }}>No resume created yet</h3>
-          <p style={{ color: 'var(--text-muted)', fontSize: '0.9rem', maxWidth: '440px', margin: '0 auto 24px' }}>
-            Generate your first ATS-ready technical resume pre-filled with your verified projects and skills.
-          </p>
-          <button onClick={handleCreateNewResume} className="btn btn-primary">
-            <Plus size={16} /> Create Your Resume
+      {/* 2. RESPONSIVE CONTROLS */}
+      {/* Mobile Segmented Controller ( < 1024px ) */}
+      <div className="show-on-mobile" style={{ marginBottom: '18px' }}>
+        <div className="nav-tabs" style={{ width: '100%', justifyContent: 'space-around' }}>
+          <button 
+            onClick={() => setMobileTab('data')}
+            className={`nav-tab ${mobileTab === 'data' ? 'active' : ''}`}
+            style={{ flex: 1, justifyContent: 'center' }}
+          >
+            <Edit3 size={14} /> Profile Data
+          </button>
+          <button 
+            onClick={() => setMobileTab('preview')}
+            className={`nav-tab ${mobileTab === 'preview' ? 'active' : ''}`}
+            style={{ flex: 1, justifyContent: 'center' }}
+          >
+            <Eye size={14} /> Live Resume
+          </button>
+          <button 
+            onClick={() => setMobileTab('ai')}
+            className={`nav-tab ${mobileTab === 'ai' ? 'active' : ''}`}
+            style={{ flex: 1, justifyContent: 'center' }}
+          >
+            <Sparkles size={14} /> AI Analysis
           </button>
         </div>
-      ) : (
-        <>
-          {/* 2. MOBILE WORKSPACE SEGMENT TABS */}
-          <div className="hide-on-desktop" style={{ marginBottom: '20px' }}>
-            <div className="segment-tabs-container">
-              <button 
-                onClick={() => setActiveTab('edit')} 
-                className={`segment-tab-btn ${activeTab === 'edit' ? 'active' : ''}`}
-              >
-                <Edit3 size={15} /> Resume Editor
-              </button>
-              <button 
-                onClick={() => setActiveTab('preview')} 
-                className={`segment-tab-btn ${activeTab === 'preview' ? 'active' : ''}`}
-              >
-                <Eye size={15} /> Live Preview
-              </button>
-              <button 
-                onClick={() => setActiveTab('matcher')} 
-                className={`segment-tab-btn ${activeTab === 'matcher' ? 'active' : ''}`}
-              >
-                <Sparkles size={15} /> ATS Matcher
-              </button>
-            </div>
+      </div>
+
+      {/* 3. 3-COLUMN DESKTOP GRID / RESPONSIVE SECTIONS */}
+      <div style={{
+        display: 'grid',
+        gridTemplateColumns: 'minmax(300px, 1fr) minmax(420px, 1.3fr) minmax(280px, 0.9fr)',
+        gap: '20px',
+        alignItems: 'start'
+      }} className="resume-grid-container">
+        
+        {/* ========================================================================= */}
+        {/* COLUMN 1: PROFILE DATA EDITOR */}
+        {/* ========================================================================= */}
+        <div 
+          className="glass-card resume-col-data" 
+          style={{ 
+            padding: '20px', 
+            display: (mobileTab === 'data' || window.innerWidth >= 1024) ? 'block' : 'none',
+            maxHeight: 'calc(100vh - 180px)',
+            overflowY: 'auto'
+          }}
+        >
+          <h3 style={{ fontSize: '1.1rem', fontWeight: '800', marginBottom: '16px', display: 'flex', alignItems: 'center', gap: '8px' }}>
+            <Edit3 size={16} color="var(--primary)" /> Profile Data
+          </h3>
+
+          <div className="form-group">
+            <label className="form-label">Resume Title</label>
+            <input 
+              type="text"
+              className="form-input"
+              value={title}
+              onChange={(e) => setTitle(e.target.value)}
+              placeholder="e.g. Frontend Engineer ATS Resume"
+            />
           </div>
 
-          {/* 3. DESKTOP 2-COLUMN WORKSPACE */}
-          <div className="grid-2-even" style={{ gap: '24px', alignItems: 'start' }}>
-            
-            {/* LEFT COLUMN: EDITORS */}
-            <div className={activeTab === 'preview' ? 'hide-on-mobile' : ''} style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
-              
-              {/* Resume Selector */}
-              {resumes.length > 1 && (
-                <div className="glass-card" style={{ padding: '12px 16px', display: 'flex', alignItems: 'center', gap: '10px' }}>
-                  <span style={{ fontSize: '0.82rem', color: 'var(--text-muted)', fontWeight: '700' }}>Version:</span>
-                  <select 
-                    value={selectedResume?.id || ''} 
-                    onChange={(e) => {
-                      const r = resumes.find(item => item.id === e.target.value);
-                      if (r) loadResumeIntoForm(r);
-                    }}
-                    className="input-field" 
-                    style={{ padding: '6px 12px', fontSize: '0.85rem', flex: 1 }}
-                  >
-                    {resumes.map(r => (
-                      <option key={r.id} value={r.id}>{r.title} ({r.targetRole || 'General'})</option>
-                    ))}
-                  </select>
-                </div>
-              )}
+          <div className="form-group">
+            <label className="form-label">Target Role</label>
+            <input 
+              type="text"
+              className="form-input"
+              value={targetRole}
+              onChange={(e) => setTargetRole(e.target.value)}
+              placeholder="e.g. Full Stack Developer"
+            />
+          </div>
 
-              {/* Document Meta */}
-              <div className="glass-card" style={{ padding: '20px' }}>
-                <div className="form-group">
-                  <label className="form-label">Resume Title</label>
-                  <input 
-                    type="text" 
-                    className="input-field" 
-                    placeholder="e.g. Frontend Engineer ATS Resume"
-                    value={title}
-                    onChange={(e) => setTitle(e.target.value)}
-                  />
-                </div>
+          <div className="form-group">
+            <label className="form-label">Professional Summary</label>
+            <textarea 
+              className="form-textarea"
+              rows={3}
+              value={summary}
+              onChange={(e) => setSummary(e.target.value)}
+              placeholder="Brief 2-3 sentence overview highlighting your core strengths..."
+            />
+          </div>
 
-                <div className="form-group">
-                  <label className="form-label">Target Role</label>
-                  <input 
-                    type="text" 
-                    className="input-field" 
-                    placeholder="e.g. Full Stack Software Engineer"
-                    value={targetRole}
-                    onChange={(e) => setTargetRole(e.target.value)}
-                  />
-                </div>
+          <div className="form-group">
+            <label className="form-label">Experience</label>
+            <textarea 
+              className="form-textarea"
+              rows={4}
+              value={experienceText}
+              onChange={(e) => setExperienceText(e.target.value)}
+              placeholder="Internships, technical roles, or freelance work..."
+            />
+          </div>
 
-                <div className="form-group">
-                  <label className="form-label">Professional Summary</label>
-                  <textarea 
-                    className="input-field" 
-                    rows={3}
-                    placeholder="Describe your technical background, engineering focus, and core competencies..."
-                    value={summary}
-                    onChange={(e) => setSummary(e.target.value)}
-                  />
-                </div>
+          <div className="form-group">
+            <label className="form-label">Proof of Work Projects</label>
+            <textarea 
+              className="form-textarea"
+              rows={5}
+              value={projectsText}
+              onChange={(e) => setProjectsText(e.target.value)}
+              placeholder="Project title, tech stack, and impact bullet points..."
+            />
+          </div>
+
+          <div className="form-group">
+            <label className="form-label">Technical Skills</label>
+            <textarea 
+              className="form-textarea"
+              rows={3}
+              value={skillsText}
+              onChange={(e) => setSkillsText(e.target.value)}
+              placeholder="Languages, frameworks, developer tools..."
+            />
+          </div>
+
+          <div className="form-group">
+            <label className="form-label">Education</label>
+            <textarea 
+              className="form-textarea"
+              rows={3}
+              value={educationText}
+              onChange={(e) => setEducationText(e.target.value)}
+              placeholder="Degree, university, graduation year..."
+            />
+          </div>
+        </div>
+
+        {/* ========================================================================= */}
+        {/* COLUMN 2: LIVE ATS RESUME PREVIEW */}
+        {/* ========================================================================= */}
+        <div 
+          className="resume-col-preview"
+          style={{
+            display: (mobileTab === 'preview' || window.innerWidth >= 1024) ? 'block' : 'none'
+          }}
+        >
+          {/* Printable White ATS Document Sheet */}
+          <div 
+            ref={resumePrintRef}
+            className="ats-resume-sheet"
+            style={{
+              background: '#ffffff',
+              color: '#0f172a',
+              padding: '36px 40px',
+              borderRadius: 'var(--radius-sm)',
+              boxShadow: '0 10px 30px rgba(0,0,0,0.6)',
+              fontFamily: '"Plus Jakarta Sans", -apple-system, sans-serif',
+              minHeight: '750px',
+              lineHeight: 1.5
+            }}
+          >
+            {/* Header */}
+            <div style={{ textAlign: 'center', borderBottom: '2px solid #1e293b', paddingBottom: '14px', marginBottom: '16px' }}>
+              <h2 style={{ fontSize: '1.6rem', fontWeight: '900', color: '#0f172a', letterSpacing: '-0.02em', marginBottom: '4px' }}>
+                {profile?.displayName || firebaseUser?.displayName || 'CANDIDATE NAME'}
+              </h2>
+              <div style={{ fontSize: '0.9rem', fontWeight: '700', color: '#4338ca', marginBottom: '4px' }}>
+                {targetRole || 'Software Engineer'}
               </div>
-
-              {/* Skills & Experience */}
-              <div className="glass-card" style={{ padding: '20px' }}>
-                <div className="form-group">
-                  <label className="form-label">Technical Skills (Comma separated)</label>
-                  <textarea 
-                    className="input-field" 
-                    rows={2}
-                    placeholder="React, TypeScript, Node.js, Python, PostgreSQL, Docker, Git"
-                    value={skillsText}
-                    onChange={(e) => setSkillsText(e.target.value)}
-                  />
-                </div>
-
-                <div className="form-group">
-                  <label className="form-label">Experience & Contributions</label>
-                  <textarea 
-                    className="input-field" 
-                    rows={4}
-                    placeholder="Company | Role | Dates&#10;- Key achievement with metric impact&#10;- Technical responsibility"
-                    value={experienceText}
-                    onChange={(e) => setExperienceText(e.target.value)}
-                  />
-                </div>
-              </div>
-
-              {/* Projects & Education */}
-              <div className="glass-card" style={{ padding: '20px' }}>
-                <div className="form-group">
-                  <label className="form-label">Proof of Work Projects</label>
-                  <textarea 
-                    className="input-field" 
-                    rows={5}
-                    placeholder="Project Name (Tech Stack)&#10;- Architecture and problem solved&#10;- Live Demo / GitHub link"
-                    value={projectsText}
-                    onChange={(e) => setProjectsText(e.target.value)}
-                  />
-                </div>
-
-                <div className="form-group" style={{ marginBottom: 0 }}>
-                  <label className="form-label">Education</label>
-                  <textarea 
-                    className="input-field" 
-                    rows={2}
-                    placeholder="Degree in Major&#10;College / University (Graduation Year)"
-                    value={educationText}
-                    onChange={(e) => setEducationText(e.target.value)}
-                  />
-                </div>
-              </div>
-
-              {/* AI Bullet Enhancer */}
-              <div className="glass-card" style={{ padding: '20px' }}>
-                <h4 style={{ fontSize: '0.95rem', fontWeight: '700', marginBottom: '10px', display: 'flex', alignItems: 'center', gap: '6px' }}>
-                  <Sparkles size={16} color="var(--primary)" /> AI Resume Bullet Optimizer
-                </h4>
-                <input 
-                  type="text" 
-                  className="input-field" 
-                  placeholder="Paste a rough bullet point (e.g. built api in nodejs)..."
-                  value={rawBullet}
-                  onChange={(e) => setRawBullet(e.target.value)}
-                />
-                <button onClick={handleEnhanceBullet} className="btn btn-secondary btn-sm" style={{ width: '100%', marginTop: '10px', justifyContent: 'center' }}>
-                  Optimize with Action Verbs & Metrics
-                </button>
-                {enhancedBullet && (
-                  <div style={{ marginTop: '12px', background: 'rgba(6, 182, 212, 0.1)', border: '1px solid rgba(6, 182, 212, 0.3)', padding: '12px', borderRadius: 'var(--radius-sm)', fontSize: '0.85rem' }}>
-                    <div style={{ fontSize: '0.72rem', color: 'var(--secondary)', fontWeight: '700', marginBottom: '4px' }}>SUGGESTED BULLET:</div>
-                    <div>{enhancedBullet}</div>
-                  </div>
-                )}
+              <div style={{ fontSize: '0.8rem', color: '#475569', display: 'flex', justifyContent: 'center', gap: '14px', flexWrap: 'wrap' }}>
+                <span>{profile?.email || firebaseUser?.email}</span>
+                {profile?.github && <span>github.com/{profile.github}</span>}
+                {profile?.linkedin && <span>linkedin.com/in/{profile.linkedin}</span>}
+                {profile?.username && <span>edworld.co.in/u/{profile.username}</span>}
               </div>
             </div>
 
-            {/* RIGHT COLUMN: LIVE ATS PREVIEW & MATCHER */}
-            <div className={activeTab === 'edit' ? 'hide-on-mobile' : ''} style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
-              
-              {/* ATS PREVIEW SHEET */}
-              <div style={{
-                background: '#ffffff',
-                color: '#0f172a',
-                borderRadius: '8px',
-                padding: '32px 28px',
-                fontFamily: 'Arial, Helvetica, sans-serif',
-                fontSize: '0.85rem',
-                lineHeight: '1.5',
-                boxShadow: '0 8px 30px rgba(0,0,0,0.6)'
-              }}>
-                {/* Resume Header */}
-                <div style={{ textAlign: 'center', borderBottom: '2px solid #0f172a', paddingBottom: '12px', marginBottom: '16px' }}>
-                  <h2 style={{ fontSize: '1.5rem', fontWeight: '800', margin: 0, textTransform: 'uppercase', letterSpacing: '0.05em', color: '#0f172a' }}>
-                    {userProfile?.displayName || 'YOUR NAME'}
-                  </h2>
-                  <div style={{ fontSize: '0.9rem', fontWeight: '700', color: '#4338ca', marginTop: '2px' }}>
-                    {targetRole || 'Software Engineer'}
-                  </div>
-                  <div style={{ fontSize: '0.75rem', color: '#475569', marginTop: '4px' }}>
-                    {userProfile?.email || ''} {userProfile?.college ? `• ${userProfile.college}` : ''} {userProfile?.username ? `• @${userProfile.username}` : ''}
-                  </div>
-                </div>
-
-                {/* Summary */}
-                {summary && (
-                  <div style={{ marginBottom: '16px' }}>
-                    <div style={{ fontSize: '0.8rem', fontWeight: '800', textTransform: 'uppercase', borderBottom: '1px solid #cbd5e1', paddingBottom: '2px', marginBottom: '6px', color: '#0f172a' }}>
-                      Professional Summary
-                    </div>
-                    <p style={{ margin: 0, fontSize: '0.82rem', color: '#334155' }}>{summary}</p>
-                  </div>
-                )}
-
-                {/* Technical Skills */}
-                {skillsText && (
-                  <div style={{ marginBottom: '16px' }}>
-                    <div style={{ fontSize: '0.8rem', fontWeight: '800', textTransform: 'uppercase', borderBottom: '1px solid #cbd5e1', paddingBottom: '2px', marginBottom: '6px', color: '#0f172a' }}>
-                      Technical Skills Matrix
-                    </div>
-                    <p style={{ margin: 0, fontSize: '0.82rem', color: '#334155' }}>{skillsText}</p>
-                  </div>
-                )}
-
-                {/* Work Experience */}
-                {experienceText && (
-                  <div style={{ marginBottom: '16px' }}>
-                    <div style={{ fontSize: '0.8rem', fontWeight: '800', textTransform: 'uppercase', borderBottom: '1px solid #cbd5e1', paddingBottom: '2px', marginBottom: '6px', color: '#0f172a' }}>
-                      Experience & Contributions
-                    </div>
-                    <div style={{ whiteSpace: 'pre-line', fontSize: '0.82rem', color: '#334155' }}>{experienceText}</div>
-                  </div>
-                )}
-
-                {/* Projects */}
-                {projectsText && (
-                  <div style={{ marginBottom: '16px' }}>
-                    <div style={{ fontSize: '0.8rem', fontWeight: '800', textTransform: 'uppercase', borderBottom: '1px solid #cbd5e1', paddingBottom: '2px', marginBottom: '6px', color: '#0f172a' }}>
-                      Proof of Work Projects
-                    </div>
-                    <div style={{ whiteSpace: 'pre-line', fontSize: '0.82rem', color: '#334155' }}>{projectsText}</div>
-                  </div>
-                )}
-
-                {/* Education */}
-                {educationText && (
-                  <div>
-                    <div style={{ fontSize: '0.8rem', fontWeight: '800', textTransform: 'uppercase', borderBottom: '1px solid #cbd5e1', paddingBottom: '2px', marginBottom: '6px', color: '#0f172a' }}>
-                      Education
-                    </div>
-                    <div style={{ whiteSpace: 'pre-line', fontSize: '0.82rem', color: '#334155' }}>{educationText}</div>
-                  </div>
-                )}
-              </div>
-
-              {/* JD MATCHER */}
-              <div className="glass-card" style={{ padding: '20px' }}>
-                <h4 style={{ fontSize: '1rem', fontWeight: '700', marginBottom: '8px', display: 'flex', alignItems: 'center', gap: '8px' }}>
-                  <Sparkles size={16} color="var(--secondary)" /> Job Description Matcher
-                </h4>
-                <p style={{ fontSize: '0.8rem', color: 'var(--text-muted)', marginBottom: '12px' }}>
-                  Paste a target Job Description to analyze ATS keyword coverage against this resume.
+            {/* Summary */}
+            {summary && (
+              <div style={{ marginBottom: '16px' }}>
+                <h3 style={{ fontSize: '0.85rem', fontWeight: '900', color: '#0f172a', textTransform: 'uppercase', letterSpacing: '0.05em', borderBottom: '1px solid #cbd5e1', paddingBottom: '3px', marginBottom: '6px' }}>
+                  Professional Summary
+                </h3>
+                <p style={{ fontSize: '0.82rem', color: '#334155', margin: 0 }}>
+                  {summary}
                 </p>
+              </div>
+            )}
 
-                <textarea 
-                  className="input-field" 
-                  rows={3} 
-                  placeholder="Paste job description requirements..."
-                  value={jobDescription}
-                  onChange={(e) => setJobDescription(e.target.value)}
-                />
+            {/* Technical Skills */}
+            {skillsText && (
+              <div style={{ marginBottom: '16px' }}>
+                <h3 style={{ fontSize: '0.85rem', fontWeight: '900', color: '#0f172a', textTransform: 'uppercase', letterSpacing: '0.05em', borderBottom: '1px solid #cbd5e1', paddingBottom: '3px', marginBottom: '6px' }}>
+                  Technical Skills
+                </h3>
+                <p style={{ fontSize: '0.82rem', color: '#334155', margin: 0 }}>
+                  {skillsText}
+                </p>
+              </div>
+            )}
 
-                <button 
-                  onClick={handleAnalyzeJD}
-                  disabled={analyzingAts}
-                  className="btn btn-primary btn-sm" 
-                  style={{ width: '100%', marginTop: '10px', justifyContent: 'center' }}
-                >
-                  {analyzingAts ? 'Analyzing ATS Alignment...' : 'Analyze Match Score'}
-                </button>
+            {/* Proof of Work Projects */}
+            {projectsText && (
+              <div style={{ marginBottom: '16px' }}>
+                <h3 style={{ fontSize: '0.85rem', fontWeight: '900', color: '#0f172a', textTransform: 'uppercase', letterSpacing: '0.05em', borderBottom: '1px solid #cbd5e1', paddingBottom: '3px', marginBottom: '6px' }}>
+                  Engineering Projects & Proof of Work
+                </h3>
+                <div style={{ fontSize: '0.82rem', color: '#334155', whiteSpace: 'pre-line' }}>
+                  {projectsText}
+                </div>
+              </div>
+            )}
 
-                {atsAnalysis && (
-                  <div style={{ marginTop: '16px', background: 'rgba(255,255,255,0.03)', borderRadius: 'var(--radius-sm)', padding: '14px', border: '1px solid var(--border-subtle)' }}>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px' }}>
-                      <span style={{ fontSize: '0.85rem', fontWeight: '700' }}>Calculated ATS Match:</span>
-                      <span className="badge badge-emerald" style={{ fontSize: '0.85rem' }}>{atsAnalysis.score}%</span>
-                    </div>
+            {/* Experience */}
+            {experienceText && (
+              <div style={{ marginBottom: '16px' }}>
+                <h3 style={{ fontSize: '0.85rem', fontWeight: '900', color: '#0f172a', textTransform: 'uppercase', letterSpacing: '0.05em', borderBottom: '1px solid #cbd5e1', paddingBottom: '3px', marginBottom: '6px' }}>
+                  Experience
+                </h3>
+                <div style={{ fontSize: '0.82rem', color: '#334155', whiteSpace: 'pre-line' }}>
+                  {experienceText}
+                </div>
+              </div>
+            )}
 
-                    {atsAnalysis.matchedKeywords.length > 0 && (
-                      <div style={{ marginBottom: '8px' }}>
-                        <div style={{ fontSize: '0.72rem', color: 'var(--emerald)', fontWeight: '700' }}>MATCHED KEYWORDS:</div>
-                        <div style={{ display: 'flex', gap: '4px', flexWrap: 'wrap', marginTop: '4px' }}>
-                          {atsAnalysis.matchedKeywords.map((k, i) => (
-                            <span key={i} className="badge badge-emerald" style={{ fontSize: '0.65rem' }}>✓ {k}</span>
-                          ))}
-                        </div>
-                      </div>
-                    )}
+            {/* Education */}
+            {educationText && (
+              <div style={{ marginBottom: '16px' }}>
+                <h3 style={{ fontSize: '0.85rem', fontWeight: '900', color: '#0f172a', textTransform: 'uppercase', letterSpacing: '0.05em', borderBottom: '1px solid #cbd5e1', paddingBottom: '3px', marginBottom: '6px' }}>
+                  Education
+                </h3>
+                <div style={{ fontSize: '0.82rem', color: '#334155', whiteSpace: 'pre-line' }}>
+                  {educationText}
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
 
-                    {atsAnalysis.missingKeywords.length > 0 && (
-                      <div>
-                        <div style={{ fontSize: '0.72rem', color: 'var(--rose)', fontWeight: '700' }}>MISSING KEYWORDS:</div>
-                        <div style={{ display: 'flex', gap: '4px', flexWrap: 'wrap', marginTop: '4px' }}>
-                          {atsAnalysis.missingKeywords.map((k, i) => (
-                            <span key={i} className="badge badge-rose" style={{ fontSize: '0.65rem' }}>+ {k}</span>
-                          ))}
-                        </div>
-                      </div>
-                    )}
-                  </div>
-                )}
+        {/* ========================================================================= */}
+        {/* COLUMN 3: AI ANALYSIS & ATS MATCHER */}
+        {/* ========================================================================= */}
+        <div 
+          className="glass-card resume-col-ai"
+          style={{ 
+            padding: '20px', 
+            display: (mobileTab === 'ai' || window.innerWidth >= 1024) ? 'block' : 'none',
+            maxHeight: 'calc(100vh - 180px)',
+            overflowY: 'auto'
+          }}
+        >
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '14px' }}>
+            <h3 style={{ fontSize: '1.1rem', fontWeight: '800', display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <Sparkles size={16} color="var(--emerald)" /> AI Analysis
+            </h3>
+            <span className="badge badge-success">
+              ATS Scanner Active
+            </span>
+          </div>
+
+          {/* ATS Score Tile */}
+          <div style={{ background: 'rgba(15, 23, 42, 0.8)', border: '1px solid var(--border-glow)', borderRadius: 'var(--radius-md)', padding: '16px', marginBottom: '18px', display: 'flex', alignItems: 'center', gap: '14px' }}>
+            <ScoreRing score={atsAnalysis?.matchScore || 82} size={54} strokeWidth={5} label="ATS Score" />
+            <div>
+              <div style={{ fontSize: '0.74rem', color: 'var(--text-muted)' }}>Target Alignment</div>
+              <div style={{ fontSize: '0.88rem', fontWeight: '800', color: '#fff' }}>
+                {targetRole || 'Software Role'}
+              </div>
+            </div>
+          </div>
+
+          {/* Job Matcher Input */}
+          <div className="form-group" style={{ marginBottom: '16px' }}>
+            <label className="form-label" style={{ fontSize: '0.8rem' }}>Paste Target Job Description</label>
+            <textarea 
+              className="form-textarea"
+              rows={3}
+              placeholder="Paste job description to calculate keyword match & gaps..."
+              value={targetJd}
+              onChange={(e) => {
+                setTargetJd(e.target.value);
+                runAtsCheck(summary + ' ' + skillsText + ' ' + projectsText, e.target.value);
+              }}
+              style={{ fontSize: '0.82rem' }}
+            />
+          </div>
+
+          {/* Keyword Gaps */}
+          {atsAnalysis && (
+            <div style={{ marginBottom: '18px' }}>
+              <div style={{ fontSize: '0.8rem', fontWeight: '800', color: 'var(--text-muted)', textTransform: 'uppercase', marginBottom: '8px' }}>
+                Matched Keywords ({atsAnalysis.matchedKeywords?.length || 0})
+              </div>
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', marginBottom: '12px' }}>
+                {atsAnalysis.matchedKeywords?.map((kw, i) => (
+                  <span key={i} className="badge badge-success" style={{ fontSize: '0.7rem' }}>
+                    ✓ {kw}
+                  </span>
+                ))}
               </div>
 
+              {atsAnalysis.missingKeywords?.length > 0 && (
+                <>
+                  <div style={{ fontSize: '0.8rem', fontWeight: '800', color: 'var(--amber)', textTransform: 'uppercase', marginBottom: '8px' }}>
+                    Missing Keywords ({atsAnalysis.missingKeywords.length})
+                  </div>
+                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
+                    {atsAnalysis.missingKeywords.map((kw, i) => (
+                      <span key={i} className="badge badge-warning" style={{ fontSize: '0.7rem' }}>
+                        + {kw}
+                      </span>
+                    ))}
+                  </div>
+                </>
+              )}
             </div>
+          )}
 
+          {/* AI Bullet Point Enhancer */}
+          <div style={{ borderTop: '1px solid var(--border-subtle)', paddingTop: '16px' }}>
+            <h4 style={{ fontSize: '0.85rem', fontWeight: '800', color: 'var(--primary)', marginBottom: '8px', display: 'flex', alignItems: 'center', gap: '6px' }}>
+              <Zap size={14} /> AI Bullet Point Optimizer
+            </h4>
+            <input 
+              type="text"
+              className="form-input"
+              placeholder="e.g. Worked on the website frontend..."
+              value={bulletToOptimize}
+              onChange={(e) => setBulletToOptimize(e.target.value)}
+              style={{ fontSize: '0.82rem', marginBottom: '8px' }}
+            />
+            <button 
+              onClick={handleOptimizeBullet}
+              className="btn btn-secondary btn-sm"
+              style={{ width: '100%', padding: '6px', fontSize: '0.78rem' }}
+            >
+              Optimize with Metrics
+            </button>
+
+            {optimizedBullet && (
+              <div style={{ marginTop: '10px', background: 'rgba(99, 102, 241, 0.12)', border: '1px solid rgba(99, 102, 241, 0.3)', borderRadius: 'var(--radius-sm)', padding: '10px', fontSize: '0.8rem', color: '#c7d2fe' }}>
+                <strong>Enhanced Bullet:</strong>
+                <div style={{ marginTop: '4px' }}>{optimizedBullet}</div>
+              </div>
+            )}
           </div>
-        </>
-      )}
+        </div>
+
+      </div>
+
+      {/* Style for Responsive 3-Column Studio */}
+      <style>{`
+        @media (max-width: 1024px) {
+          .resume-grid-container {
+            grid-template-columns: 1fr !important;
+          }
+        }
+        @media print {
+          body * {
+            visibility: hidden;
+          }
+          .ats-resume-sheet, .ats-resume-sheet * {
+            visibility: visible;
+          }
+          .ats-resume-sheet {
+            position: absolute;
+            left: 0;
+            top: 0;
+            width: 100% !important;
+            box-shadow: none !important;
+            padding: 0 !important;
+          }
+        }
+      `}</style>
     </div>
   );
 }

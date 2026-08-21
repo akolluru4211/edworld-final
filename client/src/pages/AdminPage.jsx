@@ -11,9 +11,11 @@ import {
   Trash2, 
   Edit3, 
   Search, 
-  Activity,
-  Award,
-  Lock
+  Activity, 
+  Award, 
+  Lock,
+  ExternalLink,
+  Bot
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { useNotification } from '../context/NotificationContext';
@@ -24,16 +26,16 @@ import {
   createJob, 
   deleteJob, 
   getAuditLogs, 
-  logAuditEvent,
-  updateProject,
-  getDocs,
-  collection
+  logAuditEvent, 
+  updateProject 
 } from '../services/firestoreService';
 import { db } from '../services/firebase';
+import { collection, getDocs } from 'firebase/firestore';
 import UserAvatar from '../components/common/UserAvatar';
+import { PageHeader, Modal, StatCard, EmptyState } from '../components/common/UIComponents';
 
 export default function AdminPage() {
-  const { user, userProfile } = useAuth();
+  const { firebaseUser, profile, isAdmin } = useAuth();
   const { showToast } = useNotification();
   const [activeTab, setActiveTab] = useState('analytics'); // 'analytics' | 'users' | 'jobs' | 'reviews' | 'audit'
 
@@ -59,7 +61,7 @@ export default function AdminPage() {
   const [jobType, setJobType] = useState('Internship');
   const [jobLocation, setJobLocation] = useState('Remote');
   const [jobStipend, setJobStipend] = useState('');
-  const [jobSkills, setJobSkills] = useState('React, Node.js');
+  const [jobSkills, setJobSkills] = useState('React, TypeScript, Node.js');
   const [jobDesc, setJobDesc] = useState('');
   const [jobApplyUrl, setJobApplyUrl] = useState('');
 
@@ -74,10 +76,10 @@ export default function AdminPage() {
         getDocs(collection(db, 'projects'))
       ]);
 
-      setStats(s);
-      setUserList(u);
-      setJobsList(j);
-      setAuditLogs(a);
+      setStats(s || {});
+      setUserList(u || []);
+      setJobsList(j || []);
+      setAuditLogs(a || []);
       setPendingProjects(projSnap.docs.map(d => ({ id: d.id, ...d.data() })));
     } catch (err) {
       console.warn('Error loading admin data:', err);
@@ -108,7 +110,7 @@ export default function AdminPage() {
         applyUrl: jobApplyUrl || 'https://edworld.co'
       });
 
-      await logAuditEvent(user, 'CREATE_OPPORTUNITY', 'job', newJob.id, { title: jobTitle, company: jobCompany });
+      await logAuditEvent(firebaseUser, 'CREATE_OPPORTUNITY', 'job', newJob.id, { title: jobTitle, company: jobCompany });
       setJobsList(prev => [newJob, ...prev]);
       setShowJobModal(false);
       setJobTitle('');
@@ -118,281 +120,185 @@ export default function AdminPage() {
       showToast(`Published opportunity: "${jobTitle}" at ${jobCompany}`);
       loadAdminData();
     } catch (err) {
-      showToast('Failed to create opportunity', 'error');
+      showToast('Failed to publish opportunity', 'error');
     }
   };
 
-  const handleDeleteJob = async (id, title) => {
-    if (!window.confirm(`Delete opportunity "${title}"?`)) return;
+  const handleDeleteJob = async (jobId, title) => {
     try {
-      await deleteJob(id);
-      await logAuditEvent(user, 'DELETE_OPPORTUNITY', 'job', id, { title });
-      setJobsList(prev => prev.filter(j => j.id !== id));
-      showToast('Opportunity removed.');
+      await deleteJob(jobId);
+      await logAuditEvent(firebaseUser, 'DELETE_OPPORTUNITY', 'job', jobId, { title });
+      setJobsList(prev => prev.filter(j => j.id !== jobId));
+      showToast('Opportunity removed from marketplace.');
     } catch (err) {
-      showToast('Failed to delete opportunity', 'error');
+      showToast('Failed to delete job', 'error');
     }
   };
 
-  const handleVerifyProject = async (project, approve) => {
+  const handleVerifyProject = async (projId, currentStatus) => {
+    const nextStatus = currentStatus === 'verified' ? 'unverified' : 'verified';
     try {
-      const newStatus = approve ? 'verified' : 'unverified';
-      await updateProject(project.id, {
-        verificationStatus: newStatus,
-        verificationScore: approve ? 95 : 50
+      await updateProject(projId, {
+        verificationStatus: nextStatus,
+        verificationScore: nextStatus === 'verified' ? 95 : 0
       });
-      await logAuditEvent(user, approve ? 'APPROVE_PROJECT_VERIFICATION' : 'REJECT_PROJECT_VERIFICATION', 'project', project.id, { title: project.title });
-      setPendingProjects(prev => prev.map(p => p.id === project.id ? { ...p, verificationStatus: newStatus } : p));
-      showToast(approve ? `Project "${project.title}" verified! ✓` : 'Project marked unverified.');
-      loadAdminData();
+      await logAuditEvent(firebaseUser, 'VERIFY_PROJECT', 'project', projId, { newStatus: nextStatus });
+      setPendingProjects(prev => prev.map(p => p.id === projId ? { ...p, verificationStatus: nextStatus, verificationScore: nextStatus === 'verified' ? 95 : 0 } : p));
+      showToast(`Project marked as ${nextStatus}! 🛡️`);
     } catch (err) {
-      showToast('Action failed', 'error');
+      showToast('Failed to update project status', 'error');
     }
   };
 
   return (
-    <div className="admin-page">
-      {/* 1. ADMIN HEADER */}
-      <div className="hero-banner" style={{ padding: '36px 32px', marginBottom: '28px' }}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '20px' }}>
-          <div>
-            <div style={{ display: 'inline-flex', alignItems: 'center', gap: '8px', background: 'rgba(245, 158, 11, 0.18)', border: '1px solid rgba(245, 158, 11, 0.35)', padding: '4px 12px', borderRadius: 'var(--radius-full)', marginBottom: '10px' }}>
-              <ShieldCheck size={14} color="var(--amber)" />
-              <span style={{ fontSize: '0.78rem', fontWeight: '800', color: '#fcd34d', textTransform: 'uppercase' }}>
-                Admin Command Console
-              </span>
-            </div>
-            <h1 style={{ fontSize: '2.2rem', fontWeight: '800', marginBottom: '6px' }}>
-              Platform Administration
-            </h1>
-            <p style={{ color: 'var(--text-muted)', fontSize: '0.95rem', maxWidth: '640px' }}>
-              Real-time analytics, user moderation, opportunity publisher, and project evidence verification.
-            </p>
-          </div>
+    <div className="admin-page" style={{ paddingBottom: '60px' }}>
+      
+      {/* 1. HEADER */}
+      <PageHeader 
+        badge="Enterprise Control"
+        title="Admin Command Center"
+        description="System telemetry, verified user directory, opportunity publisher, and evidence audit log."
+        action={
+          <button 
+            onClick={() => setShowJobModal(true)}
+            className="btn btn-primary btn-sm"
+          >
+            <Plus size={14} /> Publish Opportunity
+          </button>
+        }
+      />
 
-          <div className="nav-tabs">
-            <button 
-              className={`nav-tab ${activeTab === 'analytics' ? 'active' : ''}`}
-              onClick={() => setActiveTab('analytics')}
-            >
-              <Activity size={15} /> Metrics
-            </button>
-            <button 
-              className={`nav-tab ${activeTab === 'users' ? 'active' : ''}`}
-              onClick={() => setActiveTab('users')}
-            >
-              <Users size={15} /> Users ({userList.length})
-            </button>
-            <button 
-              className={`nav-tab ${activeTab === 'jobs' ? 'active' : ''}`}
-              onClick={() => setActiveTab('jobs')}
-            >
-              <Briefcase size={15} /> Jobs ({jobsList.length})
-            </button>
-            <button 
-              className={`nav-tab ${activeTab === 'reviews' ? 'active' : ''}`}
-              onClick={() => setActiveTab('reviews')}
-            >
-              <FolderGit2 size={15} /> Verification Queue
-            </button>
-            <button 
-              className={`nav-tab ${activeTab === 'audit' ? 'active' : ''}`}
-              onClick={() => setActiveTab('audit')}
-            >
-              <FileText size={15} /> Audit Log
-            </button>
-          </div>
+      {/* 2. ADMIN TABS */}
+      <div style={{ marginBottom: '24px' }}>
+        <div className="nav-tabs">
+          {[
+            { key: 'analytics', label: 'Overview', icon: Activity },
+            { key: 'users', label: `Users (${userList.length})`, icon: Users },
+            { key: 'jobs', label: `Jobs (${jobsList.length})`, icon: Briefcase },
+            { key: 'reviews', label: `Projects (${pendingProjects.length})`, icon: FolderGit2 },
+            { key: 'audit', label: 'Audit Logs', icon: ShieldCheck }
+          ].map(t => {
+            const Icon = t.icon;
+            return (
+              <button
+                key={t.key}
+                onClick={() => setActiveTab(t.key)}
+                className={`nav-tab ${activeTab === t.key ? 'active' : ''}`}
+              >
+                <Icon size={14} />
+                <span>{t.label}</span>
+              </button>
+            );
+          })}
         </div>
       </div>
 
-      {/* 2. ANALYTICS METRICS */}
+      {/* 3. TAB 1: ANALYTICS & TELEMETRY */}
       {activeTab === 'analytics' && (
-        <div>
-          <div className="responsive-grid-4" style={{ marginBottom: '28px' }}>
-            <div className="glass-card">
-              <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)', fontWeight: '700', textTransform: 'uppercase' }}>Registered Users</div>
-              <div style={{ fontSize: '2rem', fontWeight: '800', color: 'var(--primary)', marginTop: '4px' }}>
-                {stats.totalUsers}
-              </div>
-            </div>
-
-            <div className="glass-card">
-              <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)', fontWeight: '700', textTransform: 'uppercase' }}>Active Projects</div>
-              <div style={{ fontSize: '2rem', fontWeight: '800', color: 'var(--secondary)', marginTop: '4px' }}>
-                {stats.totalProjects}
-              </div>
-            </div>
-
-            <div className="glass-card">
-              <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)', fontWeight: '700', textTransform: 'uppercase' }}>Verified Proofs</div>
-              <div style={{ fontSize: '2rem', fontWeight: '800', color: 'var(--emerald)', marginTop: '4px' }}>
-                {stats.verifiedProjects}
-              </div>
-            </div>
-
-            <div className="glass-card">
-              <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)', fontWeight: '700', textTransform: 'uppercase' }}>Live Opportunities</div>
-              <div style={{ fontSize: '2rem', fontWeight: '800', color: 'var(--amber)', marginTop: '4px' }}>
-                {stats.totalJobs}
-              </div>
-            </div>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
+          <div className="grid-4">
+            <StatCard title="Active Engineers" value={stats.totalUsers || userList.length} subtitle="Registered Students" icon={Users} color="var(--primary)" />
+            <StatCard title="Engineering Projects" value={stats.totalProjects || pendingProjects.length} subtitle="Proof-of-work workspaces" icon={FolderGit2} color="var(--secondary)" />
+            <StatCard title="Open Roles" value={stats.totalJobs || jobsList.length} subtitle="Published in Marketplace" icon={Briefcase} color="var(--emerald)" />
+            <StatCard title="Interview Loops" value={stats.totalInterviews || 0} subtitle="AI evaluated sessions" icon={Bot} color="var(--amber)" />
           </div>
         </div>
       )}
 
-      {/* 3. USER MANAGEMENT */}
+      {/* TAB 2: USERS DIRECTORY */}
       {activeTab === 'users' && (
-        <div className="glass-card">
-          <h3 style={{ fontSize: '1.25rem', fontWeight: '800', marginBottom: '18px', borderBottom: '1px solid var(--border-subtle)', paddingBottom: '12px' }}>
-            Registered Users Directory ({userList.length})
-          </h3>
-
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+        <div className="glass-card" style={{ padding: '24px' }}>
+          <h3 style={{ fontSize: '1.2rem', fontWeight: '800', marginBottom: '16px' }}>Registered Students & Engineers</h3>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
             {userList.map(u => (
-              <div key={u.uid} style={{
-                background: 'rgba(255, 255, 255, 0.02)',
-                padding: '14px 18px',
-                borderRadius: '10px',
-                border: '1px solid var(--border-subtle)',
-                display: 'flex',
-                justifyContent: 'space-between',
-                alignItems: 'center',
-                flexWrap: 'wrap',
-                gap: '12px'
-              }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '14px' }}>
+              <div key={u.id || u.uid} style={{ background: 'rgba(15, 23, 42, 0.7)', padding: '14px', borderRadius: 'var(--radius-md)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
                   <UserAvatar name={u.displayName} photoURL={u.photoURL} size={42} />
                   <div>
-                    <h4 style={{ fontWeight: '700', fontSize: '0.98rem' }}>{u.displayName} (@{u.username})</h4>
-                    <p style={{ color: 'var(--text-muted)', fontSize: '0.82rem' }}>{u.headline} {u.college ? `· ${u.college}` : ''}</p>
+                    <div style={{ fontWeight: '800', fontSize: '0.92rem', color: '#fff' }}>{u.displayName}</div>
+                    <div style={{ fontSize: '0.78rem', color: 'var(--text-muted)' }}>@{u.username} · {u.college || 'Institution'}</div>
                   </div>
                 </div>
-
-                <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-                  <span className="badge badge-emerald">Score: {u.careerScore || 70}</span>
-                  <span className="badge badge-secondary">{u.role || 'student'}</span>
-                </div>
+                <Link to={`/u/${u.username || ''}`} className="btn btn-secondary btn-sm">
+                  View Profile
+                </Link>
               </div>
             ))}
           </div>
         </div>
       )}
 
-      {/* 4. OPPORTUNITY MANAGEMENT */}
+      {/* TAB 3: JOBS MANAGEMENT */}
       {activeTab === 'jobs' && (
-        <div className="glass-card">
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px', borderBottom: '1px solid var(--border-subtle)', paddingBottom: '12px' }}>
-            <h3 style={{ fontSize: '1.25rem', fontWeight: '800' }}>Active Platform Opportunities ({jobsList.length})</h3>
+        <div className="glass-card" style={{ padding: '24px' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
+            <h3 style={{ fontSize: '1.2rem', fontWeight: '800' }}>Active Marketplace Opportunities</h3>
             <button onClick={() => setShowJobModal(true)} className="btn btn-primary btn-sm">
-              <Plus size={14} /> Add Opportunity
+              <Plus size={14} /> Add Role
             </button>
           </div>
 
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-            {jobsList.map(j => (
-              <div key={j.id} style={{
-                background: 'rgba(255, 255, 255, 0.02)',
-                padding: '14px 18px',
-                borderRadius: '10px',
-                border: '1px solid var(--border-subtle)',
-                display: 'flex',
-                justifyContent: 'space-between',
-                alignItems: 'center'
-              }}>
-                <div>
-                  <h4 style={{ fontWeight: '700', fontSize: '1rem' }}>{j.title}</h4>
-                  <p style={{ color: 'var(--secondary)', fontSize: '0.82rem' }}>{j.company} · {j.type} · {j.location}</p>
-                </div>
-
-                <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                  <span className="badge badge-emerald">{j.stipendSalary}</span>
-                  <button onClick={() => handleDeleteJob(j.id, j.title)} className="btn btn-secondary btn-sm" style={{ color: 'var(--rose)', padding: '6px' }}>
-                    <Trash2 size={14} />
-                  </button>
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
-
-      {/* 5. PROJECT VERIFICATION REVIEW QUEUE */}
-      {activeTab === 'reviews' && (
-        <div className="glass-card">
-          <h3 style={{ fontSize: '1.25rem', fontWeight: '800', marginBottom: '18px', borderBottom: '1px solid var(--border-subtle)', paddingBottom: '12px' }}>
-            Project Evidence Verification Queue ({pendingProjects.length})
-          </h3>
-
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
-            {pendingProjects.map(p => (
-              <div key={p.id} style={{
-                background: 'rgba(255, 255, 255, 0.02)',
-                padding: '18px',
-                borderRadius: '10px',
-                border: '1px solid var(--border-subtle)'
-              }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '8px' }}>
-                  <div>
-                    <h4 style={{ fontWeight: '700', fontSize: '1.05rem' }}>{p.title}</h4>
-                    <p style={{ fontSize: '0.82rem', color: 'var(--secondary)' }}>Owner: {p.ownerName}</p>
-                  </div>
-                  <span className={`badge ${p.verificationStatus === 'verified' ? 'badge-emerald' : 'badge-amber'}`}>
-                    {p.verificationStatus}
-                  </span>
-                </div>
-
-                <p style={{ color: 'var(--text-muted)', fontSize: '0.88rem', marginBottom: '12px' }}>
-                  {p.description || p.tagline}
-                </p>
-
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', paddingTop: '10px', borderTop: '1px solid var(--border-subtle)' }}>
-                  <div style={{ fontSize: '0.8rem', color: 'var(--text-dim)' }}>
-                    Stack: {p.techStack?.join(', ') || 'N/A'}
-                  </div>
-
-                  <div style={{ display: 'flex', gap: '8px' }}>
-                    <button onClick={() => handleVerifyProject(p, true)} className="btn btn-primary btn-sm">
-                      <CheckCircle size={13} /> Approve Badge
-                    </button>
-                    <button onClick={() => handleVerifyProject(p, false)} className="btn btn-secondary btn-sm" style={{ color: 'var(--rose)' }}>
-                      Revoke
-                    </button>
-                  </div>
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
-
-      {/* 6. IMMUTABLE AUDIT LOG */}
-      {activeTab === 'audit' && (
-        <div className="glass-card">
-          <h3 style={{ fontSize: '1.25rem', fontWeight: '800', marginBottom: '18px', borderBottom: '1px solid var(--border-subtle)', paddingBottom: '12px' }}>
-            System Audit Trail ({auditLogs.length})
-          </h3>
-
           <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+            {jobsList.map(j => (
+              <div key={j.id} style={{ background: 'rgba(15, 23, 42, 0.7)', padding: '14px', borderRadius: 'var(--radius-md)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <div>
+                  <div style={{ fontWeight: '800', fontSize: '0.95rem', color: '#fff' }}>{j.title}</div>
+                  <div style={{ fontSize: '0.8rem', color: 'var(--secondary)' }}>{j.company} · {j.location} · {j.type}</div>
+                </div>
+                <button onClick={() => handleDeleteJob(j.id, j.title)} className="btn btn-danger btn-sm">
+                  <Trash2 size={13} /> Delete
+                </button>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* TAB 4: PROJECTS VERIFICATION */}
+      {activeTab === 'reviews' && (
+        <div className="glass-card" style={{ padding: '24px' }}>
+          <h3 style={{ fontSize: '1.2rem', fontWeight: '800', marginBottom: '16px' }}>Project Verification Queue</h3>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+            {pendingProjects.map(p => (
+              <div key={p.id} style={{ background: 'rgba(15, 23, 42, 0.7)', padding: '16px', borderRadius: 'var(--radius-md)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    <span style={{ fontWeight: '800', fontSize: '0.95rem', color: '#fff' }}>{p.title}</span>
+                    <span className={`badge ${p.verificationStatus === 'verified' ? 'badge-success' : 'badge-neutral'}`}>
+                      {p.verificationStatus || 'unverified'}
+                    </span>
+                  </div>
+                  <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)', marginTop: '2px' }}>
+                    {p.techStack?.join(', ')} · Owner: {p.ownerName || p.ownerId}
+                  </div>
+                </div>
+                <button 
+                  onClick={() => handleVerifyProject(p.id, p.verificationStatus)}
+                  className={`btn btn-sm ${p.verificationStatus === 'verified' ? 'btn-outline' : 'btn-primary'}`}
+                >
+                  {p.verificationStatus === 'verified' ? 'Revoke Verification' : 'Verify Project'}
+                </button>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* TAB 5: AUDIT LOGS */}
+      {activeTab === 'audit' && (
+        <div className="glass-card" style={{ padding: '24px' }}>
+          <h3 style={{ fontSize: '1.2rem', fontWeight: '800', marginBottom: '16px' }}>Security Audit Trail</h3>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
             {auditLogs.length === 0 ? (
-              <p style={{ color: 'var(--text-muted)', fontSize: '0.88rem' }}>No audit logs recorded yet.</p>
+              <p style={{ color: 'var(--text-muted)' }}>No audit events logged yet.</p>
             ) : (
               auditLogs.map(log => (
-                <div key={log.id} style={{
-                  background: 'rgba(0, 0, 0, 0.3)',
-                  padding: '12px 16px',
-                  borderRadius: '8px',
-                  border: '1px solid var(--border-subtle)',
-                  display: 'flex',
-                  justifyContent: 'space-between',
-                  alignItems: 'center',
-                  fontSize: '0.85rem'
-                }}>
+                <div key={log.id} style={{ background: 'rgba(15, 23, 42, 0.6)', padding: '10px 14px', borderRadius: 'var(--radius-sm)', fontSize: '0.82rem', display: 'flex', justifyContent: 'space-between' }}>
                   <div>
-                    <span style={{ color: 'var(--secondary)', fontWeight: '700' }}>{log.actorEmail}:</span>{' '}
-                    <strong style={{ color: '#fff' }}>{log.action}</strong> on {log.targetType} ({log.targetId?.slice(0, 8)})
+                    <strong style={{ color: 'var(--primary)' }}>{log.action}</strong> by {log.actorEmail || log.actorUid}
                   </div>
-                  <span style={{ color: 'var(--text-dim)', fontSize: '0.75rem' }}>
-                    {log.timestamp ? new Date(log.timestamp.toDate ? log.timestamp.toDate() : Date.now()).toLocaleTimeString() : 'Just now'}
+                  <span style={{ color: 'var(--text-dim)' }}>
+                    {log.targetType}: {log.targetId}
                   </span>
                 </div>
               ))
@@ -401,68 +307,73 @@ export default function AdminPage() {
         </div>
       )}
 
-      {/* CREATE OPPORTUNITY MODAL */}
-      {showJobModal && (
-        <div className="modal-overlay" onClick={() => setShowJobModal(false)}>
-          <div className="modal-content" onClick={e => e.stopPropagation()}>
-            <h3 style={{ fontSize: '1.35rem', fontWeight: '800', marginBottom: '16px' }}>Publish Opportunity</h3>
-            <form onSubmit={handleCreateOpportunity}>
-              <div className="grid-2-even" style={{ gap: '14px', marginBottom: '14px' }}>
-                <div>
-                  <label className="form-label">Job / Challenge Title *</label>
-                  <input type="text" className="input-field" required value={jobTitle} onChange={e => setJobTitle(e.target.value)} placeholder="e.g. Cloud Backend Intern" />
-                </div>
-                <div>
-                  <label className="form-label">Company / Organization *</label>
-                  <input type="text" className="input-field" required value={jobCompany} onChange={e => setJobCompany(e.target.value)} placeholder="e.g. Acme Cloud Corp" />
-                </div>
-              </div>
-
-              <div className="grid-2-even" style={{ gap: '14px', marginBottom: '14px' }}>
-                <div>
-                  <label className="form-label">Type</label>
-                  <select className="select-field" value={jobType} onChange={e => setJobType(e.target.value)}>
-                    <option value="Internship">Internship</option>
-                    <option value="Full-Time">Full-Time</option>
-                    <option value="Hackathon">Hackathon</option>
-                    <option value="Fellowship">Fellowship</option>
-                  </select>
-                </div>
-                <div>
-                  <label className="form-label">Location</label>
-                  <input type="text" className="input-field" value={jobLocation} onChange={e => setJobLocation(e.target.value)} placeholder="e.g. Remote or Bangalore" />
-                </div>
-              </div>
-
-              <div className="grid-2-even" style={{ gap: '14px', marginBottom: '14px' }}>
-                <div>
-                  <label className="form-label">Stipend / Salary / Prize</label>
-                  <input type="text" className="input-field" value={jobStipend} onChange={e => setJobStipend(e.target.value)} placeholder="e.g. ₹50,000 / mo" />
-                </div>
-                <div>
-                  <label className="form-label">Required Skills (comma separated)</label>
-                  <input type="text" className="input-field" value={jobSkills} onChange={e => setJobSkills(e.target.value)} placeholder="React, Node.js" />
-                </div>
-              </div>
-
-              <div className="form-group">
-                <label className="form-label">Description & Eligibility</label>
-                <textarea className="textarea-field" rows={3} value={jobDesc} onChange={e => setJobDesc(e.target.value)} placeholder="Role requirements..." />
-              </div>
-
-              <div className="form-group">
-                <label className="form-label">Application URL</label>
-                <input type="url" className="input-field" value={jobApplyUrl} onChange={e => setJobApplyUrl(e.target.value)} placeholder="https://company.com/apply" />
-              </div>
-
-              <div style={{ display: 'flex', gap: '12px', justifyContent: 'flex-end', marginTop: '20px' }}>
-                <button type="button" className="btn btn-secondary" onClick={() => setShowJobModal(false)}>Cancel</button>
-                <button type="submit" className="btn btn-primary">Publish Opportunity</button>
-              </div>
-            </form>
+      {/* JOB CREATION MODAL */}
+      <Modal 
+        isOpen={showJobModal} 
+        onClose={() => setShowJobModal(false)}
+        title="Publish Opportunity to Marketplace"
+      >
+        <form onSubmit={handleCreateOpportunity}>
+          <div className="form-group">
+            <label className="form-label">Role Title *</label>
+            <input 
+              type="text"
+              className="form-input"
+              required
+              placeholder="e.g. Software Engineer Intern"
+              value={jobTitle}
+              onChange={(e) => setJobTitle(e.target.value)}
+            />
           </div>
-        </div>
-      )}
+
+          <div className="form-group">
+            <label className="form-label">Company Name *</label>
+            <input 
+              type="text"
+              className="form-input"
+              required
+              placeholder="e.g. Stripe"
+              value={jobCompany}
+              onChange={(e) => setJobCompany(e.target.value)}
+            />
+          </div>
+
+          <div className="grid-2">
+            <div className="form-group">
+              <label className="form-label">Type</label>
+              <select className="form-select" value={jobType} onChange={(e) => setJobType(e.target.value)}>
+                <option value="Internship">Internship</option>
+                <option value="Full-time">Full-time</option>
+                <option value="Contract">Contract</option>
+              </select>
+            </div>
+            <div className="form-group">
+              <label className="form-label">Location</label>
+              <input type="text" className="form-input" placeholder="e.g. Remote" value={jobLocation} onChange={(e) => setJobLocation(e.target.value)} />
+            </div>
+          </div>
+
+          <div className="form-group">
+            <label className="form-label">Skills Required (comma separated)</label>
+            <input type="text" className="form-input" value={jobSkills} onChange={(e) => setJobSkills(e.target.value)} />
+          </div>
+
+          <div className="form-group">
+            <label className="form-label">Application URL</label>
+            <input type="url" className="form-input" placeholder="https://company.com/apply" value={jobApplyUrl} onChange={(e) => setJobApplyUrl(e.target.value)} />
+          </div>
+
+          <div className="form-group">
+            <label className="form-label">Description</label>
+            <textarea className="form-textarea" rows={3} value={jobDesc} onChange={(e) => setJobDesc(e.target.value)} />
+          </div>
+
+          <button type="submit" className="btn btn-primary" style={{ width: '100%', marginTop: '8px' }}>
+            Publish Role
+          </button>
+        </form>
+      </Modal>
+
     </div>
   );
 }

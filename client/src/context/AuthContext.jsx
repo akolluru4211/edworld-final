@@ -3,22 +3,22 @@ import {
   auth, 
   googleProvider, 
   signInWithPopup, 
-  signInWithRedirect,
-  getRedirectResult,
+  signInWithRedirect, 
+  getRedirectResult, 
   signInWithEmailAndPassword, 
   createUserWithEmailAndPassword, 
   signOut, 
-  sendPasswordResetEmail,
-  updateProfile,
+  sendPasswordResetEmail, 
+  updateProfile, 
   onAuthStateChanged 
 } from '../services/firebase';
 import { 
   getUserProfile, 
-  getOrCreateUserProfile,
+  getOrCreateUserProfile, 
   claimUsernameAndCreateProfile, 
-  updateUserProfile,
-  checkUsernameAvailable,
-  resolveUserRoute
+  updateUserProfile, 
+  checkUsernameAvailable, 
+  resolveUserRoute 
 } from '../services/firestoreService';
 
 const AuthContext = createContext(null);
@@ -232,10 +232,12 @@ export function AuthProvider({ children }) {
 
   /**
    * Complete Onboarding Profile
+   * Writes Firestore private and public documents, verifies write,
+   * updates AuthContext state immediately, and flags profile completed.
    */
   const completeOnboarding = async (profileData) => {
     if (!firebaseUser) {
-      throw new Error('No authenticated user session found.');
+      throw new Error('No authenticated user session found. Please sign in first.');
     }
     setProfileLoading(true);
     logAuth('Completing onboarding profile for UID:', { uid: firebaseUser.uid, username: profileData.username });
@@ -245,12 +247,13 @@ export function AuthProvider({ children }) {
         email: firebaseUser.email || profileData.email || '',
         photoURL: profileData.photoURL || firebaseUser.photoURL || '',
         profileCompleted: true,
-        networkVisibility: true
+        networkVisibility: profileData.networkVisibility !== false
       };
+
       const createdProfile = await claimUsernameAndCreateProfile(firebaseUser.uid, fullProfileData);
       setProfile(createdProfile);
       setProfileLoading(false);
-      logAuth('Onboarding profile created and active:', { profile: createdProfile });
+      logAuth('Onboarding profile created and active in context:', { profile: createdProfile });
       return createdProfile;
     } catch (err) {
       setProfileLoading(false);
@@ -260,7 +263,7 @@ export function AuthProvider({ children }) {
   };
 
   /**
-   * Sign Out
+   * Sign Out — Clears all cached user and profile states cleanly to prevent multi-user leaks
    */
   const logout = async () => {
     logAuth('Signing out user');
@@ -301,22 +304,6 @@ export function AuthProvider({ children }) {
     }
   };
 
-  const claimCustomUsername = async (newUsername, extraData = {}) => {
-    if (!firebaseUser) return;
-    const available = await checkUsernameAvailable(newUsername);
-    if (!available) {
-      throw new Error(`Username @${newUsername} is already taken.`);
-    }
-    const updatedProfile = await claimUsernameAndCreateProfile(firebaseUser.uid, {
-      ...profile,
-      ...extraData,
-      username: newUsername,
-      profileCompleted: true
-    });
-    setProfile(updatedProfile);
-    return updatedProfile;
-  };
-
   const refreshProfile = async () => {
     if (firebaseUser) {
       await fetchAndSetProfile(firebaseUser);
@@ -352,7 +339,6 @@ export function AuthProvider({ children }) {
     logout,
     resetPassword,
     updateProfileData,
-    claimCustomUsername,
     refreshProfile,
     resolveUserRoute,
     isAdmin: profile?.role === 'admin' || profile?.email?.endsWith('@edworld.co')
@@ -371,4 +357,17 @@ export function useAuth() {
     throw new Error('useAuth must be used within an AuthProvider');
   }
   return context;
+}
+
+/**
+ * Canonical hook for consuming authenticated profile state (Requirement 21)
+ */
+export function useCurrentUserProfile() {
+  const { firebaseUser, profile, loading, authError } = useAuth();
+  return {
+    firebaseUser,
+    profile,
+    loading,
+    error: authError
+  };
 }

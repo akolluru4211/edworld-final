@@ -10,11 +10,9 @@ import {
 import { useAuth } from '../../context/AuthContext';
 
 export default function MobileBottomNav() {
-  const { user, userProfile, profileCompleted } = useAuth();
+  const { firebaseUser, isProfileComplete } = useAuth();
 
-  if (!user || !profileCompleted) return null;
-
-  const profileLink = userProfile?.username ? `/u/${userProfile.username}` : '/settings';
+  if (!firebaseUser || !isProfileComplete) return null;
 
   return (
     <nav className="mobile-bottom-nav" aria-label="Mobile Navigation">
@@ -51,11 +49,11 @@ export default function MobileBottomNav() {
       </NavLink>
 
       <NavLink
-        to={profileLink}
+        to="/profile"
         className={({ isActive }) => `bottom-nav-tab ${isActive ? 'active' : ''}`}
       >
         <User size={20} />
-        <span>Passport</span>
+        <span>Profile</span>
       </NavLink>
     </nav>
   );

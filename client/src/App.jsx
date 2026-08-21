@@ -26,6 +26,7 @@ import InterviewPage from './pages/InterviewPage';
 import NetworkingPage from './pages/NetworkingPage';
 import NotificationsPage from './pages/NotificationsPage';
 import SettingsPage from './pages/SettingsPage';
+import ProfilePage from './pages/ProfilePage';
 
 // Admin Page
 import AdminPage from './pages/AdminPage';
@@ -55,6 +56,7 @@ export default function App() {
           <Route path="/interview" element={<ProtectedRoute><InterviewPage /></ProtectedRoute>} />
           <Route path="/networking" element={<ProtectedRoute><NetworkingPage /></ProtectedRoute>} />
           <Route path="/notifications" element={<ProtectedRoute><NotificationsPage /></ProtectedRoute>} />
+          <Route path="/profile" element={<ProtectedRoute><ProfilePage /></ProtectedRoute>} />
           <Route path="/settings" element={<ProtectedRoute><SettingsPage /></ProtectedRoute>} />
 
           {/* Admin Protected Route */}

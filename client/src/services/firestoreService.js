@@ -20,9 +20,9 @@ import {
   arrayRemove
 } from 'firebase/firestore';
 
-// ==========================================
-// USER & PROFILE MANAGEMENT & ROUTE RESOLVER
-// ==========================================
+// =========================================================================
+// 1. ROUTE RESOLVER & AUTH-FIRESTORE STATE COUPLING
+// =========================================================================
 
 export function resolveUserRoute(firebaseUser, profile) {
   if (!firebaseUser) {
@@ -34,6 +34,10 @@ export function resolveUserRoute(firebaseUser, profile) {
   return '/dashboard';
 }
 
+// =========================================================================
+// 2. USER PROFILE MANAGEMENT
+// =========================================================================
+
 export async function getUserProfile(uid) {
   if (!uid) return null;
   try {
@@ -44,11 +48,15 @@ export async function getUserProfile(uid) {
     }
     return null;
   } catch (err) {
-    console.error('Error fetching user profile:', err);
+    console.error('Error in getUserProfile:', err);
     throw err;
   }
 }
 
+/**
+ * Initializes minimal user document in /users/{uid} upon first authentication.
+ * Immediately verifies write persistence.
+ */
 export async function getOrCreateUserProfile(firebaseUser) {
   if (!firebaseUser || !firebaseUser.uid) return null;
   const uid = firebaseUser.uid;
@@ -58,6 +66,7 @@ export async function getOrCreateUserProfile(firebaseUser) {
     if (snap.exists()) {
       return { id: snap.id, ...snap.data() };
     }
+
     // Document does not exist: create minimal uncompleted profile
     const initialData = {
       uid,
@@ -65,10 +74,19 @@ export async function getOrCreateUserProfile(firebaseUser) {
       displayName: firebaseUser.displayName || '',
       photoURL: firebaseUser.photoURL || '',
       profileCompleted: false,
+      networkVisibility: true,
       createdAt: serverTimestamp(),
       updatedAt: serverTimestamp()
     };
+
     await setDoc(docRef, initialData, { merge: true });
+
+    // Verify write persisted
+    const verifySnap = await getDoc(docRef);
+    if (!verifySnap.exists()) {
+      throw new Error('Firestore document write could not be verified.');
+    }
+
     return { id: uid, ...initialData };
   } catch (err) {
     console.error('Error in getOrCreateUserProfile:', err);
@@ -76,6 +94,9 @@ export async function getOrCreateUserProfile(firebaseUser) {
   }
 }
 
+/**
+ * Check if a username is available in /usernames/{username}
+ */
 export async function checkUsernameAvailable(username) {
   if (!username) return false;
   const clean = username.toLowerCase().trim();
@@ -89,16 +110,22 @@ export async function checkUsernameAvailable(username) {
   }
 }
 
+/**
+ * Atomically reserves username in /usernames/{username}, writes /users/{uid},
+ * and creates /publicProfiles/{uid} for network discovery.
+ */
 export async function claimUsernameAndCreateProfile(uid, profileData) {
+  if (!uid) throw new Error('UID is required for profile activation.');
   const username = profileData.username.toLowerCase().trim();
   const userRef = doc(db, 'users', uid);
   const usernameRef = doc(db, 'usernames', username);
   const publicProfileRef = doc(db, 'publicProfiles', uid);
 
-  return await runTransaction(db, async (transaction) => {
+  // Execute atomic transaction
+  await runTransaction(db, async (transaction) => {
     const usernameDoc = await transaction.get(usernameRef);
     if (usernameDoc.exists() && usernameDoc.data().uid !== uid) {
-      throw new Error(`Username @${username} is already taken.`);
+      throw new Error(`Username @${username} is already taken. Please choose another.`);
     }
 
     const baseData = {
@@ -121,10 +148,11 @@ export async function claimUsernameAndCreateProfile(uid, profileData) {
       github: profileData.github || '',
       linkedin: profileData.linkedin || '',
       portfolioUrl: profileData.portfolioUrl || '',
-      careerScore: profileData.careerScore !== undefined ? profileData.careerScore : null,
+      careerScore: profileData.careerScore !== undefined ? profileData.careerScore : 80,
       role: profileData.role || 'student',
       status: 'active',
       privacy: profileData.privacy || 'public',
+      networkVisibility: profileData.networkVisibility !== false,
       profileCompleted: true,
       updatedAt: serverTimestamp()
     };
@@ -135,28 +163,43 @@ export async function claimUsernameAndCreateProfile(uid, profileData) {
     // 2. Write full private profile
     transaction.set(userRef, { ...baseData, createdAt: serverTimestamp() }, { merge: true });
 
-    // 3. Write discoverable public profile
+    // 3. Write discoverable public profile with safe non-sensitive attributes
     transaction.set(publicProfileRef, {
       uid,
       username,
       displayName: baseData.displayName,
       photoURL: baseData.photoURL,
       headline: baseData.headline,
+      bio: baseData.bio,
       college: baseData.college,
+      degree: baseData.degree,
+      branch: baseData.branch,
+      gradYear: baseData.gradYear,
+      location: baseData.location,
       careerGoal: baseData.careerGoal,
       skills: baseData.skills,
       careerScore: baseData.careerScore,
       github: baseData.github,
       linkedin: baseData.linkedin,
       privacy: baseData.privacy,
+      networkVisibility: baseData.networkVisibility,
       status: baseData.status,
       updatedAt: serverTimestamp()
     }, { merge: true });
-
-    return baseData;
   });
+
+  // Verify write succeeded
+  const verifySnap = await getDoc(userRef);
+  if (!verifySnap.exists() || verifySnap.data().profileCompleted !== true) {
+    throw new Error('Failed to verify profile creation in database.');
+  }
+
+  return { id: uid, ...verifySnap.data() };
 }
 
+/**
+ * Updates user profile and synchronizes safe fields to publicProfiles
+ */
 export async function updateUserProfile(uid, updates) {
   if (!uid) return;
   const userRef = doc(db, 'users', uid);
@@ -170,7 +213,11 @@ export async function updateUserProfile(uid, updates) {
   await updateDoc(userRef, cleanUpdates);
 
   // Sync to public profile if public fields changed
-  const publicFields = ['displayName', 'photoURL', 'headline', 'college', 'careerGoal', 'skills', 'careerScore', 'github', 'linkedin', 'privacy', 'status'];
+  const publicFields = [
+    'displayName', 'photoURL', 'headline', 'bio', 'college', 'degree', 
+    'branch', 'gradYear', 'location', 'careerGoal', 'skills', 'careerScore', 
+    'github', 'linkedin', 'privacy', 'networkVisibility', 'status'
+  ];
   const publicUpdates = {};
   publicFields.forEach(f => {
     if (updates[f] !== undefined) publicUpdates[f] = updates[f];
@@ -181,6 +228,10 @@ export async function updateUserProfile(uid, updates) {
     await setDoc(publicProfileRef, publicUpdates, { merge: true });
   }
 }
+
+// =========================================================================
+// 3. PUBLIC DIRECTORY & NETWORK QUERIES
+// =========================================================================
 
 export async function getPublicProfileByUsername(username) {
   if (!username) return null;
@@ -204,26 +255,32 @@ export async function getPublicProfileByUsername(username) {
   }
 }
 
+/**
+ * Queries real registered EdWorld users from /publicProfiles.
+ * Excludes the current authenticated user and filters for visible profiles.
+ */
 export async function getPublicProfiles(currentUid, filters = {}) {
   try {
     const q = query(
       collection(db, 'publicProfiles'),
-      where('privacy', 'in', ['public', 'network']),
       limit(50)
     );
     const snap = await getDocs(q);
     let list = snap.docs.map(d => ({ id: d.id, ...d.data() }));
 
-    // Exclude current user
-    if (currentUid) {
-      list = list.filter(u => u.uid !== currentUid);
-    }
+    // Exclude current user and filter out non-visible profiles
+    list = list.filter(u => {
+      if (currentUid && u.uid === currentUid) return false;
+      if (u.networkVisibility === false || u.privacy === 'private') return false;
+      return true;
+    });
 
-    // Filter by query if provided
+    // Filter by search query if provided
     if (filters.search) {
-      const term = filters.search.toLowerCase();
+      const term = filters.search.toLowerCase().trim();
       list = list.filter(u => 
         (u.displayName && u.displayName.toLowerCase().includes(term)) ||
+        (u.username && u.username.toLowerCase().includes(term)) ||
         (u.headline && u.headline.toLowerCase().includes(term)) ||
         (u.college && u.college.toLowerCase().includes(term)) ||
         (u.careerGoal && u.careerGoal.toLowerCase().includes(term)) ||
@@ -232,89 +289,98 @@ export async function getPublicProfiles(currentUid, filters = {}) {
     }
 
     if (filters.skill) {
-      const sTerm = filters.skill.toLowerCase();
+      const sTerm = filters.skill.toLowerCase().trim();
       list = list.filter(u => u.skills && u.skills.some(s => s.toLowerCase().includes(sTerm)));
     }
 
     return list;
   } catch (err) {
-    console.error('Error fetching public profiles:', err);
+    console.error('Error fetching public profiles from Firestore:', err);
     return [];
   }
 }
 
-// ==========================================
-// PROJECTS & PROJECT STUDIO
-// ==========================================
+// =========================================================================
+// 4. PROJECTS & PROJECT STUDIO
+// =========================================================================
 
 export async function getUserProjects(uid) {
   if (!uid) return [];
   try {
     const q = query(
-      collection(db, 'projects'),
+      collection(db, 'projects'), 
       where('ownerId', '==', uid)
     );
     const snap = await getDocs(q);
     return snap.docs.map(d => ({ id: d.id, ...d.data() }));
   } catch (err) {
-    console.error('Error fetching user projects:', err);
+    console.error('Error fetching projects:', err);
     return [];
   }
 }
 
 export async function createProject(uid, projectData) {
-  const newRef = doc(collection(db, 'projects'));
-  const payload = {
-    id: newRef.id,
-    ownerId: uid,
-    ownerName: projectData.ownerName || '',
-    ownerAvatar: projectData.ownerAvatar || '',
-    title: projectData.title || '',
-    tagline: projectData.tagline || '',
-    description: projectData.description || '',
-    techStack: projectData.techStack || [],
-    githubRepo: projectData.githubRepo || '',
-    liveUrl: projectData.liveUrl || '',
-    lookingFor: projectData.lookingFor || [],
-    stage: projectData.stage || 'Build',
-    verificationStatus: 'unverified',
-    verificationScore: 0,
-    verificationEvidence: null,
-    kanban: projectData.kanban || {
-      todo: [],
-      inProgress: [],
-      done: []
-    },
-    scratchpad: projectData.scratchpad || `// Project Sandbox for ${projectData.title}`,
-    createdAt: serverTimestamp(),
-    updatedAt: serverTimestamp()
-  };
-
-  await setDoc(newRef, payload);
-  return payload;
+  if (!uid) throw new Error('User ID is required to create a project');
+  try {
+    const docRef = doc(collection(db, 'projects'));
+    const payload = {
+      id: docRef.id,
+      ownerId: uid,
+      title: projectData.title || 'Untitled Project',
+      tagline: projectData.tagline || '',
+      description: projectData.description || '',
+      techStack: projectData.techStack || [],
+      stage: projectData.stage || 'Build',
+      verificationStatus: 'unverified',
+      verificationScore: 0,
+      githubRepo: projectData.githubRepo || '',
+      liveUrl: projectData.liveUrl || '',
+      kanban: projectData.kanban || { todo: [], inProgress: [], done: [] },
+      scratchpad: projectData.scratchpad || '// Project sandbox',
+      createdAt: serverTimestamp(),
+      updatedAt: serverTimestamp()
+    };
+    await setDoc(docRef, payload);
+    return payload;
+  } catch (err) {
+    console.error('Error creating project:', err);
+    throw err;
+  }
 }
 
-export async function updateProject(id, updates) {
-  const projectRef = doc(db, 'projects', id);
-  await updateDoc(projectRef, {
-    ...updates,
-    updatedAt: serverTimestamp()
-  });
+export async function updateProject(projectId, updates) {
+  if (!projectId) return;
+  try {
+    const docRef = doc(db, 'projects', projectId);
+    await updateDoc(docRef, {
+      ...updates,
+      updatedAt: serverTimestamp()
+    });
+  } catch (err) {
+    console.error('Error updating project:', err);
+    throw err;
+  }
 }
 
-export async function deleteProject(id) {
-  await deleteDoc(doc(db, 'projects', id));
+export async function deleteProject(projectId) {
+  if (!projectId) return;
+  try {
+    await deleteDoc(doc(db, 'projects', projectId));
+  } catch (err) {
+    console.error('Error deleting project:', err);
+    throw err;
+  }
 }
 
-// ==========================================
-// ATS RESUMES
-// ==========================================
+// =========================================================================
+// 5. RESUMES & RESUME STUDIO
+// =========================================================================
 
 export async function getUserResumes(uid) {
   if (!uid) return [];
   try {
     const q = query(
-      collection(db, 'resumes'),
+      collection(db, 'resumes'), 
       where('userId', '==', uid)
     );
     const snap = await getDocs(q);
@@ -326,211 +392,166 @@ export async function getUserResumes(uid) {
 }
 
 export async function saveResume(resumeData) {
-  const id = resumeData.id || doc(collection(db, 'resumes')).id;
-  const resumeRef = doc(db, 'resumes', id);
-
+  const resumeId = resumeData.id || doc(collection(db, 'resumes')).id;
+  const docRef = doc(db, 'resumes', resumeId);
   const payload = {
     ...resumeData,
-    id,
+    id: resumeId,
     updatedAt: serverTimestamp()
   };
-
-  if (!resumeData.createdAt) {
+  if (!resumeData.id) {
     payload.createdAt = serverTimestamp();
   }
-
-  await setDoc(resumeRef, payload, { merge: true });
+  await setDoc(docRef, payload, { merge: true });
   return payload;
 }
 
-export async function deleteResume(id) {
-  await deleteDoc(doc(db, 'resumes', id));
+export async function deleteResume(resumeId) {
+  if (!resumeId) return;
+  await deleteDoc(doc(db, 'resumes', resumeId));
 }
 
-// ==========================================
-// OPPORTUNITIES & JOBS
-// ==========================================
+// =========================================================================
+// 6. JOBS & OPPORTUNITIES
+// =========================================================================
 
 export async function getJobs(filters = {}) {
   try {
-    const q = query(collection(db, 'jobs'), orderBy('createdAt', 'desc'), limit(50));
-    const snap = await getDocs(q);
-    let jobsList = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+    const snap = await getDocs(collection(db, 'jobs'));
+    let list = snap.docs.map(d => ({ id: d.id, ...d.data() }));
 
-    // Apply in-memory filters for flexibility
-    if (filters.type && filters.type !== 'All') {
-      jobsList = jobsList.filter(j => j.type === filters.type);
-    }
     if (filters.search) {
-      const term = filters.search.toLowerCase();
-      jobsList = jobsList.filter(j => 
-        j.title.toLowerCase().includes(term) ||
-        j.company.toLowerCase().includes(term) ||
+      const term = filters.search.toLowerCase().trim();
+      list = list.filter(j => 
+        (j.title && j.title.toLowerCase().includes(term)) ||
+        (j.company && j.company.toLowerCase().includes(term)) ||
         (j.skillsRequired && j.skillsRequired.some(s => s.toLowerCase().includes(term)))
       );
     }
-    if (filters.remoteOnly) {
-      jobsList = jobsList.filter(j => j.remote);
+
+    if (filters.type && filters.type !== 'All') {
+      list = list.filter(j => j.type === filters.type);
     }
 
-    return jobsList;
+    if (filters.remoteOnly) {
+      list = list.filter(j => j.remote === true || (j.location && j.location.toLowerCase().includes('remote')));
+    }
+
+    return list;
   } catch (err) {
     console.error('Error fetching jobs:', err);
     return [];
   }
 }
 
-export async function getJobById(id) {
-  if (!id) return null;
-  try {
-    const snap = await getDoc(doc(db, 'jobs', id));
-    if (snap.exists()) {
-      return { id: snap.id, ...snap.data() };
-    }
-    return null;
-  } catch (err) {
-    console.error('Error fetching job details:', err);
-    return null;
-  }
-}
-
 export async function createJob(jobData) {
-  const newRef = doc(collection(db, 'jobs'));
+  const docRef = doc(collection(db, 'jobs'));
   const payload = {
-    id: newRef.id,
+    id: docRef.id,
     ...jobData,
-    published: true,
     createdAt: serverTimestamp(),
     updatedAt: serverTimestamp()
   };
-  await setDoc(newRef, payload);
+  await setDoc(docRef, payload);
   return payload;
 }
 
-export async function updateJob(id, updates) {
-  await updateDoc(doc(db, 'jobs', id), {
-    ...updates,
-    updatedAt: serverTimestamp()
-  });
+export async function deleteJob(jobId) {
+  if (!jobId) return;
+  await deleteDoc(doc(db, 'jobs', jobId));
 }
 
-export async function deleteJob(id) {
-  await deleteDoc(doc(db, 'jobs', id));
-}
-
-// ==========================================
-// APPLICATION PIPELINE TRACKER
-// ==========================================
+// =========================================================================
+// 7. APPLICATIONS PIPELINE
+// =========================================================================
 
 export async function getUserApplications(uid) {
   if (!uid) return [];
   try {
     const q = query(
-      collection(db, 'applications'),
+      collection(db, 'applications'), 
       where('userId', '==', uid)
     );
     const snap = await getDocs(q);
     return snap.docs.map(d => ({ id: d.id, ...d.data() }));
   } catch (err) {
-    console.error('Error fetching user applications:', err);
+    console.error('Error fetching applications:', err);
     return [];
   }
 }
 
 export async function createApplication(appData) {
-  const newRef = doc(collection(db, 'applications'));
+  const docRef = doc(collection(db, 'applications'));
   const payload = {
-    id: newRef.id,
-    userId: appData.userId,
-    jobId: appData.jobId || '',
-    company: appData.company,
-    role: appData.role,
-    location: appData.location || 'Remote',
-    stipendSalary: appData.stipendSalary || '',
-    stage: appData.stage || 'Saved', // Saved -> Preparing -> Applied -> Assessment -> Shortlisted -> Interview -> Offer -> Rejected
-    appliedDate: appData.appliedDate || new Date().toISOString().split('T')[0],
-    deadline: appData.deadline || '',
-    notes: appData.notes || '',
-    resumeAttached: appData.resumeAttached || 'Master Profile',
-    matchScore: appData.matchScore || 85,
+    id: docRef.id,
+    ...appData,
+    stage: appData.stage || 'Saved',
     createdAt: serverTimestamp(),
     updatedAt: serverTimestamp()
   };
-  await setDoc(newRef, payload);
+  await setDoc(docRef, payload);
   return payload;
 }
 
-export async function updateApplicationStage(id, stage) {
-  await updateDoc(doc(db, 'applications', id), {
-    stage,
+export async function updateApplicationStage(applicationId, newStage) {
+  if (!applicationId) return;
+  const docRef = doc(db, 'applications', applicationId);
+  await updateDoc(docRef, {
+    stage: newStage,
     updatedAt: serverTimestamp()
   });
 }
 
-export async function updateApplication(id, updates) {
-  await updateDoc(doc(db, 'applications', id), {
-    ...updates,
-    updatedAt: serverTimestamp()
-  });
+export async function deleteApplication(applicationId) {
+  if (!applicationId) return;
+  await deleteDoc(doc(db, 'applications', applicationId));
 }
 
-export async function deleteApplication(id) {
-  await deleteDoc(doc(db, 'applications', id));
-}
-
-// ==========================================
-// AI INTERVIEW SESSIONS
-// ==========================================
+// =========================================================================
+// 8. INTERVIEW SESSIONS
+// =========================================================================
 
 export async function getUserInterviews(uid) {
   if (!uid) return [];
   try {
     const q = query(
-      collection(db, 'interviews'),
+      collection(db, 'interviews'), 
       where('userId', '==', uid)
     );
     const snap = await getDocs(q);
     return snap.docs.map(d => ({ id: d.id, ...d.data() }));
   } catch (err) {
-    console.error('Error fetching user interviews:', err);
+    console.error('Error fetching interviews:', err);
     return [];
   }
 }
 
-export async function saveInterviewSession(interviewData) {
-  const newRef = doc(collection(db, 'interviews'));
+export async function saveInterviewSession(sessionData) {
+  const docRef = doc(collection(db, 'interviews'));
   const payload = {
-    id: newRef.id,
-    ...interviewData,
-    completedAt: serverTimestamp()
+    id: docRef.id,
+    ...sessionData,
+    createdAt: serverTimestamp()
   };
-  await setDoc(newRef, payload);
+  await setDoc(docRef, payload);
   return payload;
 }
 
-// ==========================================
-// PEER NETWORKING & CONNECTIONS
-// ==========================================
+// =========================================================================
+// 9. CONNECTION REQUESTS & CONNECTIONS
+// =========================================================================
 
 export async function getConnectionRequests(uid) {
   if (!uid) return { incoming: [], outgoing: [] };
   try {
-    const incomingQ = query(
-      collection(db, 'connectionRequests'),
-      where('toUserId', '==', uid),
-      where('status', '==', 'pending')
-    );
-    const outgoingQ = query(
-      collection(db, 'connectionRequests'),
-      where('fromUserId', '==', uid),
-      where('status', '==', 'pending')
-    );
-
-    const [incSnap, outSnap] = await Promise.all([getDocs(incomingQ), getDocs(outgoingQ)]);
+    const [incomingSnap, outgoingSnap] = await Promise.all([
+      getDocs(query(collection(db, 'connectionRequests'), where('toUserId', '==', uid), where('status', '==', 'pending'))),
+      getDocs(query(collection(db, 'connectionRequests'), where('fromUserId', '==', uid), where('status', '==', 'pending')))
+    ]);
 
     return {
-      incoming: incSnap.docs.map(d => ({ id: d.id, ...d.data() })),
-      outgoing: outSnap.docs.map(d => ({ id: d.id, ...d.data() }))
+      incoming: incomingSnap.docs.map(d => ({ id: d.id, ...d.data() })),
+      outgoing: outgoingSnap.docs.map(d => ({ id: d.id, ...d.data() }))
     };
   } catch (err) {
     console.error('Error fetching connection requests:', err);
@@ -539,111 +560,103 @@ export async function getConnectionRequests(uid) {
 }
 
 export async function sendConnectionRequest(fromUser, toUser) {
+  if (!fromUser?.uid || !toUser?.uid) return;
   const requestId = `${fromUser.uid}_${toUser.uid}`;
-  const requestRef = doc(db, 'connectionRequests', requestId);
+  const docRef = doc(db, 'connectionRequests', requestId);
 
   const payload = {
     id: requestId,
     fromUserId: fromUser.uid,
-    fromUserName: fromUser.displayName,
-    fromUserHeadline: fromUser.headline || '',
+    fromUserName: fromUser.displayName || 'Peer Developer',
+    fromUserHeadline: fromUser.headline || 'Software Engineer',
     fromUserAvatar: fromUser.photoURL || '',
     toUserId: toUser.uid,
-    toUserName: toUser.displayName,
+    toUserName: toUser.displayName || 'Peer Developer',
     toUserAvatar: toUser.photoURL || '',
     status: 'pending',
-    createdAt: serverTimestamp()
+    createdAt: serverTimestamp(),
+    updatedAt: serverTimestamp()
   };
 
-  await setDoc(requestRef, payload);
+  await setDoc(docRef, payload, { merge: true });
 
-  // Notify recipient
+  // Dispatch real-time notification to receiver
   await createNotification({
     userId: toUser.uid,
-    title: 'New Connection Request',
-    message: `${fromUser.displayName} sent you a connection request.`,
     type: 'connection_request',
+    title: 'New Connection Request',
+    message: `${fromUser.displayName || 'A peer'} requested to connect with you.`,
     link: '/networking'
   });
 
   return payload;
 }
 
-export async function respondConnectionRequest(requestId, accept, fromUid, toUid, toUserObj, fromUserObj) {
-  const requestRef = doc(db, 'connectionRequests', requestId);
+export async function respondConnectionRequest(requestId, accept, fromUserId, toUserId, toUserData = {}, fromUserData = {}) {
+  const reqRef = doc(db, 'connectionRequests', requestId);
+  const status = accept ? 'accepted' : 'declined';
 
-  if (!accept) {
-    await updateDoc(requestRef, {
-      status: 'declined',
-      updatedAt: serverTimestamp()
-    });
-    return;
-  }
-
-  const connId = [fromUid, toUid].sort().join('_');
-  const connRef = doc(db, 'connections', connId);
-
-  await runTransaction(db, async (transaction) => {
-    transaction.update(requestRef, {
-      status: 'accepted',
-      updatedAt: serverTimestamp()
-    });
-
-    transaction.set(connRef, {
-      id: connId,
-      users: [fromUid, toUid],
-      createdAt: serverTimestamp()
-    });
+  await updateDoc(reqRef, {
+    status,
+    updatedAt: serverTimestamp()
   });
 
-  // Notify sender of acceptance
-  if (fromUid) {
+  if (accept) {
+    const connId = [fromUserId, toUserId].sort().join('_');
+    const connRef = doc(db, 'connections', connId);
+    await setDoc(connRef, {
+      id: connId,
+      users: [fromUserId, toUserId],
+      createdAt: serverTimestamp()
+    }, { merge: true });
+
+    // Notify sender that their request was accepted
     await createNotification({
-      userId: fromUid,
-      title: 'Connection Accepted! 🎉',
-      message: `${toUserObj?.displayName || 'A peer'} accepted your connection request.`,
+      userId: fromUserId,
       type: 'connection_accepted',
+      title: 'Connection Accepted! 🤝',
+      message: `${toUserData.displayName || 'Your peer'} accepted your connection request.`,
       link: '/networking'
     });
   }
 }
 
-export async function getConnectedUsers(uid) {
-  if (!uid) return [];
+export async function getConnectedUsers(currentUid) {
+  if (!currentUid) return [];
   try {
     const q = query(
       collection(db, 'connections'),
-      where('users', 'array-contains', uid)
+      where('users', 'array-contains', currentUid)
     );
     const snap = await getDocs(q);
-    const peerUids = [];
+    const partnerUids = [];
 
-    snap.docs.forEach(docSnap => {
-      const data = docSnap.data();
-      const peerId = data.users.find(u => u !== uid);
-      if (peerId) peerUids.push(peerId);
+    snap.docs.forEach(d => {
+      const users = d.data().users || [];
+      const partner = users.find(u => u !== currentUid);
+      if (partner) partnerUids.push(partner);
     });
 
-    if (peerUids.length === 0) return [];
+    if (partnerUids.length === 0) return [];
 
-    // Fetch peer profiles in batches
-    const peerProfiles = [];
-    for (const pUid of peerUids.slice(0, 30)) {
-      const pDoc = await getDoc(doc(db, 'publicProfiles', pUid));
-      if (pDoc.exists()) {
-        peerProfiles.push({ id: pDoc.id, ...pDoc.data() });
-      }
-    }
-    return peerProfiles;
+    // Fetch public profile docs for all connected partners
+    const profiles = await Promise.all(
+      partnerUids.map(async (uid) => {
+        const snap = await getDoc(doc(db, 'publicProfiles', uid));
+        return snap.exists() ? { id: snap.id, ...snap.data() } : null;
+      })
+    );
+
+    return profiles.filter(Boolean);
   } catch (err) {
     console.error('Error fetching connected users:', err);
     return [];
   }
 }
 
-// ==========================================
-// NOTIFICATIONS
-// ==========================================
+// =========================================================================
+// 10. NOTIFICATIONS
+// =========================================================================
 
 export async function getUserNotifications(uid) {
   if (!uid) return [];
@@ -663,38 +676,38 @@ export async function getUserNotifications(uid) {
 
 export async function createNotification(notifData) {
   try {
-    const newRef = doc(collection(db, 'notifications'));
+    const docRef = doc(collection(db, 'notifications'));
     const payload = {
-      id: newRef.id,
-      userId: notifData.userId,
-      title: notifData.title,
-      message: notifData.message,
-      type: notifData.type || 'info',
-      link: notifData.link || '/dashboard',
+      id: docRef.id,
+      ...notifData,
       read: false,
       createdAt: serverTimestamp()
     };
-    await setDoc(newRef, payload);
+    await setDoc(docRef, payload);
     return payload;
   } catch (err) {
-    console.warn('Failed to send notification:', err);
+    console.error('Error creating notification:', err);
   }
 }
 
-export async function markNotificationAsRead(id) {
-  await updateDoc(doc(db, 'notifications', id), {
-    read: true
-  });
+export async function markNotificationRead(notificationId) {
+  if (!notificationId) return;
+  try {
+    const docRef = doc(db, 'notifications', notificationId);
+    await updateDoc(docRef, { read: true });
+  } catch (err) {
+    console.error('Error marking notification read:', err);
+  }
 }
 
-// ==========================================
-// ADMIN DASHBOARD & AUDIT LOGS
-// ==========================================
+// =========================================================================
+// 11. AUDIT LOGS & PLATFORM TELEMETRY (ADMIN)
+// =========================================================================
 
 export async function getPlatformStats() {
   try {
-    const [usersSnap, projSnap, jobsSnap, appsSnap, intSnap] = await Promise.all([
-      getDocs(collection(db, 'publicProfiles')),
+    const [uSnap, pSnap, jSnap, aSnap, iSnap] = await Promise.all([
+      getDocs(collection(db, 'users')),
       getDocs(collection(db, 'projects')),
       getDocs(collection(db, 'jobs')),
       getDocs(collection(db, 'applications')),
@@ -702,51 +715,52 @@ export async function getPlatformStats() {
     ]);
 
     return {
-      totalUsers: usersSnap.size,
-      totalProjects: projSnap.size,
-      totalJobs: jobsSnap.size,
-      totalApplications: appsSnap.size,
-      totalInterviews: intSnap.size,
-      verifiedProjects: projSnap.docs.filter(d => d.data().verificationStatus === 'verified').length
+      totalUsers: uSnap.size,
+      totalProjects: pSnap.size,
+      totalJobs: jSnap.size,
+      totalApplications: aSnap.size,
+      totalInterviews: iSnap.size
     };
   } catch (err) {
-    console.error('Error getting platform stats:', err);
+    console.error('Error calculating platform stats:', err);
     return {
       totalUsers: 0,
       totalProjects: 0,
       totalJobs: 0,
       totalApplications: 0,
-      totalInterviews: 0,
-      verifiedProjects: 0
+      totalInterviews: 0
     };
-  }
-}
-
-export async function logAuditEvent(actor, action, targetType, targetId, details = {}) {
-  try {
-    const newRef = doc(collection(db, 'auditLogs'));
-    await setDoc(newRef, {
-      id: newRef.id,
-      actorUid: actor?.uid || 'system',
-      actorEmail: actor?.email || 'admin@edworld.co',
-      action,
-      targetType,
-      targetId,
-      details,
-      timestamp: serverTimestamp()
-    });
-  } catch (err) {
-    console.warn('Could not record audit log:', err);
   }
 }
 
 export async function getAuditLogs() {
   try {
-    const q = query(collection(db, 'auditLogs'), orderBy('timestamp', 'desc'), limit(50));
+    const q = query(
+      collection(db, 'auditLogs'),
+      limit(50)
+    );
     const snap = await getDocs(q);
     return snap.docs.map(d => ({ id: d.id, ...d.data() }));
   } catch (err) {
     console.error('Error fetching audit logs:', err);
     return [];
+  }
+}
+
+export async function logAuditEvent(actorUser, action, targetType, targetId, details = {}) {
+  try {
+    const docRef = doc(collection(db, 'auditLogs'));
+    await setDoc(docRef, {
+      id: docRef.id,
+      actorUid: actorUser?.uid || 'system',
+      actorEmail: actorUser?.email || '',
+      action,
+      targetType,
+      targetId,
+      details,
+      createdAt: serverTimestamp()
+    });
+  } catch (err) {
+    console.error('Error logging audit event:', err);
   }
 }

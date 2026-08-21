@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, Navigate } from 'react-router-dom';
 import { 
   User, 
   Sparkles, 
@@ -12,7 +12,12 @@ import {
   BookOpen, 
   Layers, 
   Briefcase,
-  AlertCircle
+  AlertCircle,
+  Github,
+  Linkedin,
+  MapPin,
+  Eye,
+  ShieldCheck
 } from 'lucide-react';
 import BrandLogo from '../components/common/BrandLogo';
 import AuthLoadingScreen from '../components/common/AuthLoadingScreen';
@@ -62,15 +67,19 @@ export default function OnboardingPage() {
   // Form State
   const [displayName, setDisplayName] = useState('');
   const [username, setUsername] = useState('');
-  const [headline, setHeadline] = useState('');
+  const [headline, setHeadline] = useState('Aspiring Software Engineer & Problem Solver');
   const [college, setCollege] = useState('');
   const [degree, setDegree] = useState('B.Tech / B.E.');
   const [branch, setBranch] = useState('Computer Science & Engineering');
   const [gradYear, setGradYear] = useState('2026');
+  const [location, setLocation] = useState('');
   const [careerGoal, setCareerGoal] = useState('Full Stack Software Engineer');
   const [skills, setSkills] = useState(['React', 'JavaScript', 'Node.js']);
   const [customSkill, setCustomSkill] = useState('');
   const [bio, setBio] = useState('');
+  const [github, setGithub] = useState('');
+  const [linkedin, setLinkedin] = useState('');
+  const [networkVisibility, setNetworkVisibility] = useState(true);
   const [photoURL, setPhotoURL] = useState('');
 
   // Validation & Loading
@@ -87,7 +96,6 @@ export default function OnboardingPage() {
       const baseUser = (firebaseUser.email ? firebaseUser.email.split('@')[0] : 'dev')
         .replace(/[^a-z0-9]/gi, '').toLowerCase().slice(0, 15);
       setUsername(baseUser);
-      setHeadline('Aspiring Software Engineer & Problem Solver');
     }
   }, [firebaseUser]);
 
@@ -176,9 +184,13 @@ export default function OnboardingPage() {
         degree,
         branch,
         gradYear,
+        location: location.trim(),
         careerGoal,
         skills,
         bio: bio.trim(),
+        github: github.trim().replace(/^https?:\/\/github\.com\//, ''),
+        linkedin: linkedin.trim().replace(/^https?:\/\/linkedin\.com\/in\//, ''),
+        networkVisibility,
         photoURL: photoURL || ''
       });
 
@@ -186,7 +198,7 @@ export default function OnboardingPage() {
       navigate('/dashboard', { replace: true });
     } catch (err) {
       console.error('Onboarding submission error:', err);
-      setError(err.message || 'Failed to complete profile setup. Please try again.');
+      setError(err.message || 'Failed to complete profile setup. Please check your connection.');
     } finally {
       setSubmitting(false);
     }
@@ -245,7 +257,7 @@ export default function OnboardingPage() {
                 <label className="form-label">Full Name *</label>
                 <input 
                   type="text" 
-                  className="input-field" 
+                  className="form-input" 
                   required
                   placeholder="e.g. Adarsh Kolluru"
                   value={displayName}
@@ -261,7 +273,7 @@ export default function OnboardingPage() {
                   <span style={{ position: 'absolute', left: '14px', top: '14px', color: 'var(--text-muted)', fontWeight: '700' }}>@</span>
                   <input 
                     type="text" 
-                    className="input-field" 
+                    className="form-input" 
                     style={{ paddingLeft: '32px', paddingRight: '40px' }}
                     required
                     placeholder="username"
@@ -273,20 +285,20 @@ export default function OnboardingPage() {
                       <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>checking...</span>
                     )}
                     {usernameStatus === 'available' && (
-                      <CheckCircle2 size={18} color="var(--success)" />
+                      <CheckCircle2 size={18} color="var(--emerald)" />
                     )}
                     {usernameStatus === 'taken' && (
-                      <XCircle size={18} color="var(--danger)" />
+                      <XCircle size={18} color="var(--rose)" />
                     )}
                   </div>
                 </div>
                 {usernameStatus === 'available' && (
-                  <div style={{ fontSize: '0.78rem', color: 'var(--success)', marginTop: '4px' }}>
+                  <div style={{ fontSize: '0.78rem', color: 'var(--emerald)', marginTop: '4px' }}>
                     ✓ Handle @{username} is available
                   </div>
                 )}
                 {usernameStatus === 'taken' && (
-                  <div style={{ fontSize: '0.78rem', color: 'var(--danger)', marginTop: '4px' }}>
+                  <div style={{ fontSize: '0.78rem', color: 'var(--rose)', marginTop: '4px' }}>
                     ✕ Handle @{username} is already reserved
                   </div>
                 )}
@@ -297,7 +309,7 @@ export default function OnboardingPage() {
               <label className="form-label">Professional Headline *</label>
               <input 
                 type="text" 
-                className="input-field" 
+                className="form-input" 
                 required
                 placeholder="e.g. Full Stack Developer & Open Source Contributor"
                 value={headline}
@@ -318,9 +330,9 @@ export default function OnboardingPage() {
                 <label className="form-label">College / University Name *</label>
                 <input 
                   type="text" 
-                  className="input-field" 
+                  className="form-input" 
                   required
-                  placeholder="e.g. Indian Institute of Technology / Stanford University"
+                  placeholder="e.g. Stanford University / Indian Institute of Technology"
                   value={college}
                   onChange={(e) => setCollege(e.target.value)}
                 />
@@ -329,23 +341,23 @@ export default function OnboardingPage() {
               <div className="form-group">
                 <label className="form-label">Degree *</label>
                 <select 
-                  className="input-field"
+                  className="form-select" 
                   value={degree}
                   onChange={(e) => setDegree(e.target.value)}
                 >
                   {DEGREES.map(d => (
-                    <option key={d} value={d} style={{ background: '#0f172a', color: '#fff' }}>{d}</option>
+                    <option key={d} value={d}>{d}</option>
                   ))}
                 </select>
               </div>
             </div>
 
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '20px', marginTop: '16px' }}>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '20px', marginTop: '16px' }}>
               <div className="form-group">
                 <label className="form-label">Branch / Major</label>
                 <input 
                   type="text" 
-                  className="input-field" 
+                  className="form-input" 
                   placeholder="e.g. Computer Science & Engineering"
                   value={branch}
                   onChange={(e) => setBranch(e.target.value)}
@@ -353,16 +365,27 @@ export default function OnboardingPage() {
               </div>
 
               <div className="form-group">
-                <label className="form-label">Expected Graduation Year</label>
+                <label className="form-label">Graduation Year</label>
                 <select 
-                  className="input-field"
+                  className="form-select" 
                   value={gradYear}
                   onChange={(e) => setGradYear(e.target.value)}
                 >
-                  {['2024', '2025', '2026', '2027', '2028'].map(yr => (
-                    <option key={yr} value={yr} style={{ background: '#0f172a', color: '#fff' }}>{yr}</option>
+                  {['2024', '2025', '2026', '2027', '2028', '2029'].map(yr => (
+                    <option key={yr} value={yr}>{yr}</option>
                   ))}
                 </select>
+              </div>
+
+              <div className="form-group">
+                <label className="form-label">Location (City / Country)</label>
+                <input 
+                  type="text" 
+                  className="form-input" 
+                  placeholder="e.g. Bengaluru, India / San Francisco, CA"
+                  value={location}
+                  onChange={(e) => setLocation(e.target.value)}
+                />
               </div>
             </div>
           </div>
@@ -370,19 +393,19 @@ export default function OnboardingPage() {
           {/* Section 3: Target Career & Tech Stack */}
           <div style={{ marginBottom: '32px' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '16px', borderBottom: '1px solid var(--border-subtle)', paddingBottom: '10px' }}>
-              <Target size={20} color="var(--accent)" />
+              <Target size={20} color="var(--emerald)" />
               <h3 style={{ fontSize: '1.15rem', fontWeight: '700', margin: 0 }}>3. Target Career & Technical Skills</h3>
             </div>
 
             <div className="form-group">
               <label className="form-label">Primary Career Goal *</label>
               <select 
-                className="input-field"
+                className="form-select" 
                 value={careerGoal}
                 onChange={(e) => setCareerGoal(e.target.value)}
               >
                 {CAREER_GOALS.map(cg => (
-                  <option key={cg} value={cg} style={{ background: '#0f172a', color: '#fff' }}>{cg}</option>
+                  <option key={cg} value={cg}>{cg}</option>
                 ))}
               </select>
             </div>
@@ -441,7 +464,7 @@ export default function OnboardingPage() {
               <div style={{ display: 'flex', gap: '10px' }}>
                 <input 
                   type="text" 
-                  className="input-field" 
+                  className="form-input" 
                   placeholder="Type another skill (e.g. Next.js, Redis, Rust)"
                   value={customSkill}
                   onChange={(e) => setCustomSkill(e.target.value)}
@@ -450,8 +473,8 @@ export default function OnboardingPage() {
                 <button 
                   type="button" 
                   onClick={handleAddCustomSkill}
-                  className="btn btn-secondary"
-                  style={{ padding: '0 18px', fontSize: '0.88rem' }}
+                  className="btn btn-secondary btn-sm"
+                  style={{ padding: '0 18px' }}
                 >
                   Add
                 </button>
@@ -459,17 +482,60 @@ export default function OnboardingPage() {
             </div>
           </div>
 
-          {/* Section 4: Short Bio */}
+          {/* Section 4: Social & Bio */}
           <div style={{ marginBottom: '32px' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '16px', borderBottom: '1px solid var(--border-subtle)', paddingBottom: '10px' }}>
+              <Github size={20} color="var(--primary)" />
+              <h3 style={{ fontSize: '1.15rem', fontWeight: '700', margin: 0 }}>4. Links & Pitch</h3>
+            </div>
+
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '20px', marginBottom: '16px' }}>
+              <div className="form-group">
+                <label className="form-label">GitHub Username</label>
+                <input 
+                  type="text" 
+                  className="form-input" 
+                  placeholder="e.g. octocat"
+                  value={github}
+                  onChange={(e) => setGithub(e.target.value)}
+                />
+              </div>
+
+              <div className="form-group">
+                <label className="form-label">LinkedIn Username / Profile</label>
+                <input 
+                  type="text" 
+                  className="form-input" 
+                  placeholder="e.g. in/username"
+                  value={linkedin}
+                  onChange={(e) => setLinkedin(e.target.value)}
+                />
+              </div>
+            </div>
+
             <div className="form-group">
-              <label className="form-label">Bio / Career Pitch</label>
+              <label className="form-label">Developer Bio & Pitch</label>
               <textarea 
-                className="input-field" 
+                className="form-textarea" 
                 rows="3"
                 placeholder="Briefly describe what you are building, your engineering interests, or what roles you are pursuing..."
                 value={bio}
                 onChange={(e) => setBio(e.target.value)}
               />
+            </div>
+
+            {/* Network Visibility Checkbox */}
+            <div style={{ marginTop: '16px', background: 'rgba(15, 23, 42, 0.7)', padding: '14px 16px', borderRadius: 'var(--radius-md)', border: '1px solid var(--border-subtle)', display: 'flex', alignItems: 'center', gap: '12px' }}>
+              <input 
+                type="checkbox" 
+                id="networkVisibility" 
+                checked={networkVisibility} 
+                onChange={(e) => setNetworkVisibility(e.target.checked)}
+                style={{ width: '18px', height: '18px', cursor: 'pointer' }}
+              />
+              <label htmlFor="networkVisibility" style={{ fontSize: '0.85rem', color: 'var(--text-body)', cursor: 'pointer', margin: 0 }}>
+                Make my profile discoverable in the <strong>EdWorld Peer Network</strong> so collaborators and recruiters can find me.
+              </label>
             </div>
           </div>
 
@@ -477,8 +543,8 @@ export default function OnboardingPage() {
           <button 
             type="submit" 
             disabled={submitting}
-            className="btn btn-primary" 
-            style={{ width: '100%', padding: '16px', fontSize: '1.05rem', fontWeight: '700', display: 'flex', justifyContent: 'center', gap: '10px' }}
+            className="btn btn-primary btn-lg" 
+            style={{ width: '100%', padding: '16px', fontSize: '1.05rem', fontWeight: '800', display: 'flex', justifyContent: 'center', gap: '10px' }}
           >
             {submitting ? 'Creating Career Identity...' : 'Activate Career Identity & Enter Dashboard'} <ArrowRight size={18} />
           </button>

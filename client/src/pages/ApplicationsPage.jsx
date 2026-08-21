@@ -10,11 +10,12 @@ import {
   Clock, 
   Briefcase, 
   Bot, 
-  FileText,
-  Calendar,
-  AlertCircle,
-  X,
-  ChevronRight
+  FileText, 
+  Calendar, 
+  AlertCircle, 
+  X, 
+  ChevronRight,
+  MoreVertical
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { useNotification } from '../context/NotificationContext';
@@ -24,18 +25,18 @@ import {
   updateApplicationStage, 
   deleteApplication 
 } from '../services/firestoreService';
+import { EmptyState, Modal, PageHeader } from '../components/common/UIComponents';
 
 const PIPELINE_STAGES = [
   'Saved',
+  'Preparing',
   'Applied',
-  'Assessment',
   'Interview',
-  'Offer',
-  'Rejected'
+  'Offer'
 ];
 
 export default function ApplicationsPage() {
-  const { user } = useAuth();
+  const { firebaseUser, profile } = useAuth();
   const { showToast } = useNotification();
   const [applications, setApplications] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -48,14 +49,14 @@ export default function ApplicationsPage() {
   const [location, setLocation] = useState('Remote');
   const [stipendSalary, setStipendSalary] = useState('');
   const [deadline, setDeadline] = useState('');
+  const [stage, setStage] = useState('Saved');
   const [notes, setNotes] = useState('');
-  const [stage, setStage] = useState('Applied');
 
   const loadApplications = async () => {
-    if (!user) return;
+    if (!firebaseUser) return;
     try {
-      const list = await getUserApplications(user.uid);
-      setApplications(list);
+      const list = await getUserApplications(firebaseUser.uid);
+      setApplications(list || []);
     } catch (err) {
       console.warn('Error loading applications:', err);
     } finally {
@@ -65,21 +66,24 @@ export default function ApplicationsPage() {
 
   useEffect(() => {
     loadApplications();
-  }, [user]);
+  }, [firebaseUser]);
 
   const handleCreate = async (e) => {
     e.preventDefault();
-    if (!company.trim() || !roleTitle.trim() || !user) return;
+    if (!company.trim() || !roleTitle.trim() || !firebaseUser) return;
 
     try {
-      const newApp = await createApplication(user.uid, {
+      const newApp = await createApplication({
+        userId: firebaseUser.uid,
         company,
-        roleTitle,
+        role: roleTitle,
         location,
         stipendSalary,
-        deadline,
+        deadline: deadline || 'In 14 days',
+        stage,
         notes,
-        stage
+        resumeAttached: `${profile?.careerGoal || 'Software Engineer'} ATS Resume`,
+        matchScore: 88
       });
 
       setApplications(prev => [newApp, ...prev]);
@@ -98,258 +102,276 @@ export default function ApplicationsPage() {
     setApplications(prev => prev.map(a => a.id === appId ? { ...a, stage: newStage } : a));
     try {
       await updateApplicationStage(appId, newStage);
-      showToast(`Moved application to ${newStage}`);
+      showToast(`Application moved to ${newStage} stage.`);
     } catch (err) {
       showToast('Failed to update stage', 'error');
     }
   };
 
   const handleDelete = async (appId) => {
-    if (!window.confirm('Remove this application from pipeline?')) return;
+    setApplications(prev => prev.filter(a => a.id !== appId));
     try {
       await deleteApplication(appId);
-      setApplications(prev => prev.filter(a => a.id !== appId));
-      showToast('Application removed');
+      showToast('Application removed from tracker.');
     } catch (err) {
       showToast('Failed to delete application', 'error');
     }
   };
 
-  const filteredApps = activeMobileStage === 'All'
-    ? applications
-    : applications.filter(a => (a.stage || 'Applied').toLowerCase() === activeMobileStage.toLowerCase());
-
   return (
-    <div className="applications-page" style={{ paddingBottom: '60px' }}>
-      {/* 1. HERO HEADER */}
-      <div className="glass-card" style={{ padding: '28px 24px', marginBottom: '20px', background: 'linear-gradient(135deg, rgba(18, 26, 44, 0.95) 0%, rgba(15, 23, 42, 0.95) 100%)' }}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '14px' }}>
-          <div>
-            <div style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', background: 'rgba(99, 102, 241, 0.18)', border: '1px solid rgba(99, 102, 241, 0.35)', padding: '4px 10px', borderRadius: 'var(--radius-full)', marginBottom: '8px' }}>
-              <Kanban size={13} color="var(--primary)" />
-              <span style={{ fontSize: '0.75rem', fontWeight: '800', color: '#a5b4fc', textTransform: 'uppercase' }}>
-                Pipeline Tracking
-              </span>
-            </div>
-            <h1 style={{ fontSize: '1.8rem', fontWeight: '800', marginBottom: '4px' }}>
-              Application & Interview Pipeline
-            </h1>
-            <p style={{ color: 'var(--text-muted)', fontSize: '0.88rem', margin: 0 }}>
-              Track opportunities through interview stages, prepare answers, and close offers.
-            </p>
-          </div>
-
-          <button onClick={() => setShowModal(true)} className="btn btn-primary btn-sm" style={{ padding: '8px 16px' }}>
+    <div className="applications-page" style={{ paddingBottom: '50px' }}>
+      
+      {/* 1. HEADER */}
+      <PageHeader 
+        badge="Application Command Center"
+        title="Application Pipeline"
+        description="Track your active engineering opportunities through each lifecycle stage from Saved to Offer."
+        action={
+          <button 
+            onClick={() => setShowModal(true)}
+            className="btn btn-primary btn-sm"
+          >
             <Plus size={15} /> Add Application
           </button>
+        }
+      />
+
+      {/* 2. MOBILE STAGE SELECTOR ( < 1024px ) */}
+      <div className="show-on-mobile" style={{ marginBottom: '20px' }}>
+        <div className="nav-tabs">
+          {['All', ...PIPELINE_STAGES].map(st => (
+            <button
+              key={st}
+              onClick={() => setActiveMobileStage(st)}
+              className={`nav-tab ${activeMobileStage === st ? 'active' : ''}`}
+            >
+              {st} ({st === 'All' ? applications.length : applications.filter(a => (a.stage || 'Saved') === st).length})
+            </button>
+          ))}
         </div>
       </div>
 
-      {/* 2. MOBILE STATUS TABS (< 1024px) */}
-      <div className="hide-on-desktop" style={{ marginBottom: '18px' }}>
-        <div className="segment-tabs-container">
-          {['All', ...PIPELINE_STAGES].map(st => {
-            const count = st === 'All' ? applications.length : applications.filter(a => a.stage === st).length;
+      {/* 3. PIPELINE STAGE COLUMNS (DESKTOP KANBAN / MOBILE FILTERED) */}
+      {loading ? (
+        <div className="grid-4">
+          {[1, 2, 3, 4].map(i => (
+            <div key={i} className="glass-card" style={{ height: '280px' }}>
+              <div className="skeleton" style={{ height: '24px', width: '50%', marginBottom: '14px' }} />
+              <div className="skeleton" style={{ height: '80px', width: '100%' }} />
+            </div>
+          ))}
+        </div>
+      ) : applications.length === 0 ? (
+        <EmptyState 
+          icon={Kanban}
+          title="No applications in your pipeline"
+          description="Log and track companies you are preparing, applying, or interviewing for."
+          actionText="Add Application"
+          onAction={() => setShowModal(true)}
+          secondaryActionText="Browse Opportunities"
+          secondaryActionLink="/jobs"
+        />
+      ) : (
+        <div style={{
+          display: 'grid',
+          gridTemplateColumns: 'repeat(5, 1fr)',
+          gap: '16px',
+          alignItems: 'start'
+        }} className="pipeline-columns-container">
+          {PIPELINE_STAGES.map(stageName => {
+            const stageApps = applications.filter(a => (a.stage || 'Saved') === stageName);
+            const isVisibleOnMobile = activeMobileStage === 'All' || activeMobileStage === stageName;
+
             return (
-              <button
-                key={st}
-                onClick={() => setActiveMobileStage(st)}
-                className={`segment-tab-btn ${activeMobileStage === st ? 'active' : ''}`}
-                style={{ padding: '6px 14px', fontSize: '0.82rem' }}
+              <div 
+                key={stageName}
+                className="pipeline-column"
+                style={{
+                  background: 'rgba(15, 23, 42, 0.65)',
+                  border: '1px solid var(--border-subtle)',
+                  borderRadius: 'var(--radius-lg)',
+                  padding: '16px',
+                  display: isVisibleOnMobile ? 'flex' : 'none',
+                  flexDirection: 'column',
+                  gap: '12px',
+                  minHeight: '400px'
+                }}
               >
-                {st} ({count})
-              </button>
+                {/* Column Header */}
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', paddingBottom: '10px', borderBottom: '1px solid var(--border-subtle)' }}>
+                  <span style={{ fontWeight: '800', fontSize: '0.9rem', color: '#fff', textTransform: 'uppercase', letterSpacing: '0.03em' }}>
+                    {stageName}
+                  </span>
+                  <span className="badge badge-neutral" style={{ fontSize: '0.7rem' }}>
+                    {stageApps.length}
+                  </span>
+                </div>
+
+                {/* Cards List */}
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', flex: 1 }}>
+                  {stageApps.length === 0 ? (
+                    <div style={{ padding: '24px 10px', textAlign: 'center', color: 'var(--text-dim)', fontSize: '0.78rem' }}>
+                      No {stageName.toLowerCase()} roles
+                    </div>
+                  ) : (
+                    stageApps.map(app => (
+                      <div 
+                        key={app.id}
+                        className="glass-card"
+                        style={{
+                          padding: '14px',
+                          display: 'flex',
+                          flexDirection: 'column',
+                          gap: '10px',
+                          background: 'rgba(18, 26, 44, 0.95)'
+                        }}
+                      >
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                          <div>
+                            <div style={{ fontWeight: '800', fontSize: '0.95rem', color: '#fff' }}>
+                              {app.role || app.roleTitle}
+                            </div>
+                            <div style={{ fontSize: '0.82rem', color: 'var(--secondary)', fontWeight: '700' }}>
+                              {app.company}
+                            </div>
+                          </div>
+
+                          <button 
+                            onClick={() => handleDelete(app.id)}
+                            style={{ background: 'transparent', border: 'none', color: 'var(--text-dim)', cursor: 'pointer', padding: '2px' }}
+                            title="Delete application"
+                          >
+                            <Trash2 size={13} />
+                          </button>
+                        </div>
+
+                        {/* Metadata */}
+                        <div style={{ fontSize: '0.74rem', color: 'var(--text-muted)', display: 'flex', flexDirection: 'column', gap: '3px' }}>
+                          <div>Deadline: <strong style={{ color: 'var(--text-body)' }}>{app.deadline || 'Open'}</strong></div>
+                          <div>Resume: <span style={{ color: 'var(--primary)' }}>{app.resumeAttached || 'Master ATS Resume'}</span></div>
+                        </div>
+
+                        {/* Stage Selector */}
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderTop: '1px solid var(--border-subtle)', paddingTop: '8px' }}>
+                          <select 
+                            value={app.stage || 'Saved'}
+                            onChange={(e) => handleStageChange(app.id, e.target.value)}
+                            style={{
+                              background: 'rgba(15, 23, 42, 0.9)',
+                              border: '1px solid var(--border-medium)',
+                              color: '#fff',
+                              borderRadius: 'var(--radius-xs)',
+                              padding: '4px 6px',
+                              fontSize: '0.72rem',
+                              fontWeight: '700'
+                            }}
+                          >
+                            {PIPELINE_STAGES.map(st => (
+                              <option key={st} value={st}>{st}</option>
+                            ))}
+                          </select>
+
+                          <Link 
+                            to="/interview" 
+                            className="btn btn-ghost btn-sm"
+                            style={{ padding: '2px 6px', fontSize: '0.72rem', color: 'var(--emerald)' }}
+                            title="Practice interview for this role"
+                          >
+                            <Bot size={12} /> Prep
+                          </Link>
+                        </div>
+                      </div>
+                    ))
+                  )}
+                </div>
+              </div>
             );
           })}
         </div>
-      </div>
-
-      {/* 3. MOBILE LIST VIEW (< 1024px) */}
-      <div className="hide-on-desktop">
-        {filteredApps.length === 0 ? (
-          <div className="glass-card" style={{ padding: '36px 20px', textAlign: 'center' }}>
-            <Kanban size={36} color="var(--text-dim)" style={{ margin: '0 auto 12px' }} />
-            <h3 style={{ fontSize: '1.05rem', marginBottom: '4px' }}>No applications in {activeMobileStage}</h3>
-            <p style={{ color: 'var(--text-muted)', fontSize: '0.82rem', marginBottom: '14px' }}>
-              Discover opportunities on the job board or add a custom application.
-            </p>
-            <button onClick={() => setShowModal(true)} className="btn btn-primary btn-sm">Add Application</button>
-          </div>
-        ) : (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-            {filteredApps.map(app => (
-              <div key={app.id} className="glass-card" style={{ padding: '16px' }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '8px' }}>
-                  <div>
-                    <h3 style={{ fontWeight: '800', fontSize: '1rem', margin: 0 }}>{app.roleTitle || app.role}</h3>
-                    <div style={{ fontSize: '0.85rem', color: 'var(--secondary)', fontWeight: '700', marginTop: '2px' }}>
-                      {app.company}
-                    </div>
-                  </div>
-                  <button 
-                    onClick={() => handleDelete(app.id)}
-                    style={{ background: 'transparent', border: 'none', color: 'var(--rose)', cursor: 'pointer', padding: '4px' }}
-                  >
-                    <Trash2 size={16} />
-                  </button>
-                </div>
-
-                <div style={{ display: 'flex', alignItems: 'center', gap: '10px', fontSize: '0.78rem', color: 'var(--text-muted)', marginBottom: '12px', flexWrap: 'wrap' }}>
-                  {app.location && <span>📍 {app.location}</span>}
-                  {app.deadline && <span>⏰ {app.deadline}</span>}
-                </div>
-
-                {/* Stage Selector Dropdown */}
-                <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '12px' }}>
-                  <span style={{ fontSize: '0.78rem', color: 'var(--text-muted)' }}>Stage:</span>
-                  <select 
-                    value={app.stage || 'Applied'}
-                    onChange={(e) => handleStageChange(app.id, e.target.value)}
-                    className="input-field"
-                    style={{ padding: '6px 10px', fontSize: '0.82rem', width: 'auto', minHeight: '34px' }}
-                  >
-                    {PIPELINE_STAGES.map(s => (
-                      <option key={s} value={s} style={{ background: '#0f172a', color: '#fff' }}>{s}</option>
-                    ))}
-                  </select>
-                </div>
-
-                {/* Quick Action Links */}
-                <div style={{ display: 'flex', gap: '8px', paddingTop: '10px', borderTop: '1px solid var(--border-subtle)' }}>
-                  <Link to="/interview" className="btn btn-outline btn-sm" style={{ flex: 1, justifyContent: 'center', fontSize: '0.78rem' }}>
-                    <Bot size={13} /> Prepare Interview
-                  </Link>
-                  <Link to="/resume" className="btn btn-secondary btn-sm" style={{ flex: 1, justifyContent: 'center', fontSize: '0.78rem' }}>
-                    <FileText size={13} /> Tailor Resume
-                  </Link>
-                </div>
-              </div>
-            ))}
-          </div>
-        )}
-      </div>
-
-      {/* 4. DESKTOP/TABLET KANBAN BOARD (≥ 1024px) */}
-      <div className="hide-on-mobile" style={{
-        display: 'grid',
-        gridTemplateColumns: `repeat(${PIPELINE_STAGES.length}, minmax(220px, 1fr))`,
-        gap: '14px',
-        overflowX: 'auto',
-        paddingBottom: '16px'
-      }}>
-        {PIPELINE_STAGES.map(stageName => {
-          const stageApps = applications.filter(a => (a.stage || 'Applied') === stageName);
-          return (
-            <div 
-              key={stageName}
-              style={{
-                background: 'rgba(15, 23, 42, 0.7)',
-                border: '1px solid var(--border-subtle)',
-                borderRadius: 'var(--radius-md)',
-                padding: '14px',
-                display: 'flex',
-                flexDirection: 'column',
-                minHeight: '400px'
-              }}
-            >
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px', borderBottom: '1px solid var(--border-subtle)', paddingBottom: '8px' }}>
-                <span style={{ fontWeight: '800', fontSize: '0.85rem' }}>{stageName}</span>
-                <span className="badge badge-primary" style={{ fontSize: '0.68rem', padding: '2px 6px' }}>{stageApps.length}</span>
-              </div>
-
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', flex: 1 }}>
-                {stageApps.map(app => (
-                  <div 
-                    key={app.id} 
-                    className="glass-card" 
-                    style={{ padding: '12px', background: 'rgba(26, 38, 64, 0.9)' }}
-                  >
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '4px' }}>
-                      <div style={{ fontWeight: '700', fontSize: '0.88rem' }}>{app.roleTitle || app.role}</div>
-                      <button 
-                        onClick={() => handleDelete(app.id)}
-                        style={{ background: 'transparent', border: 'none', color: 'var(--text-dim)', cursor: 'pointer', padding: '2px' }}
-                      >
-                        <Trash2 size={13} />
-                      </button>
-                    </div>
-                    <div style={{ fontSize: '0.78rem', color: 'var(--secondary)', marginBottom: '8px' }}>{app.company}</div>
-
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '6px' }}>
-                      <select 
-                        value={app.stage || 'Applied'}
-                        onChange={(e) => handleStageChange(app.id, e.target.value)}
-                        style={{ background: 'rgba(0,0,0,0.4)', color: '#fff', border: '1px solid var(--border-subtle)', borderRadius: '4px', fontSize: '0.72rem', padding: '2px 4px' }}
-                      >
-                        {PIPELINE_STAGES.map(s => (
-                          <option key={s} value={s}>{s}</option>
-                        ))}
-                      </select>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </div>
-          );
-        })}
-      </div>
-
-      {/* 5. ADD APPLICATION MODAL */}
-      {showModal && (
-        <div className="nav-drawer-overlay" onClick={() => setShowModal(false)} style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '16px' }}>
-          <div className="glass-card" onClick={e => e.stopPropagation()} style={{ width: '100%', maxWidth: '460px', padding: '28px' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '18px' }}>
-              <h3 style={{ fontSize: '1.15rem', fontWeight: '800', margin: 0 }}>Track New Application</h3>
-              <button onClick={() => setShowModal(false)} style={{ background: 'transparent', border: 'none', color: 'var(--text-muted)', cursor: 'pointer' }}>
-                <X size={20} />
-              </button>
-            </div>
-
-            <form onSubmit={handleCreate}>
-              <div className="form-group">
-                <label className="form-label">Role Title *</label>
-                <input 
-                  type="text" 
-                  className="input-field" 
-                  required 
-                  placeholder="e.g. Software Engineer Intern"
-                  value={roleTitle}
-                  onChange={(e) => setRoleTitle(e.target.value)}
-                />
-              </div>
-
-              <div className="form-group">
-                <label className="form-label">Company Name *</label>
-                <input 
-                  type="text" 
-                  className="input-field" 
-                  required 
-                  placeholder="e.g. Google / Microsoft / Startup"
-                  value={company}
-                  onChange={(e) => setCompany(e.target.value)}
-                />
-              </div>
-
-              <div className="form-group">
-                <label className="form-label">Initial Stage</label>
-                <select 
-                  className="input-field"
-                  value={stage}
-                  onChange={(e) => setStage(e.target.value)}
-                >
-                  {PIPELINE_STAGES.map(s => (
-                    <option key={s} value={s} style={{ background: '#0f172a', color: '#fff' }}>{s}</option>
-                  ))}
-                </select>
-              </div>
-
-              <button type="submit" className="btn btn-primary" style={{ width: '100%', marginTop: '10px', justifyContent: 'center' }}>
-                Save Application to Pipeline
-              </button>
-            </form>
-          </div>
-        </div>
       )}
+
+      {/* 4. NEW APPLICATION MODAL */}
+      <Modal 
+        isOpen={showModal} 
+        onClose={() => setShowModal(false)}
+        title="Add Application to Pipeline"
+      >
+        <form onSubmit={handleCreate}>
+          <div className="form-group">
+            <label className="form-label">Company Name *</label>
+            <input 
+              type="text"
+              className="form-input"
+              required
+              placeholder="e.g. Stripe, Razorpay, Google"
+              value={company}
+              onChange={(e) => setCompany(e.target.value)}
+            />
+          </div>
+
+          <div className="form-group">
+            <label className="form-label">Role Title *</label>
+            <input 
+              type="text"
+              className="form-input"
+              required
+              placeholder="e.g. Frontend Engineer Intern"
+              value={roleTitle}
+              onChange={(e) => setRoleTitle(e.target.value)}
+            />
+          </div>
+
+          <div className="grid-2">
+            <div className="form-group">
+              <label className="form-label">Initial Stage</label>
+              <select 
+                className="form-select"
+                value={stage}
+                onChange={(e) => setStage(e.target.value)}
+              >
+                {PIPELINE_STAGES.map(st => (
+                  <option key={st} value={st}>{st}</option>
+                ))}
+              </select>
+            </div>
+
+            <div className="form-group">
+              <label className="form-label">Deadline</label>
+              <input 
+                type="text"
+                className="form-input"
+                placeholder="e.g. In 7 days"
+                value={deadline}
+                onChange={(e) => setDeadline(e.target.value)}
+              />
+            </div>
+          </div>
+
+          <div className="form-group">
+            <label className="form-label">Notes & Preparation Plan</label>
+            <textarea 
+              className="form-textarea"
+              rows={3}
+              placeholder="Recruiter contact, interview rounds, referral status..."
+              value={notes}
+              onChange={(e) => setNotes(e.target.value)}
+            />
+          </div>
+
+          <button type="submit" className="btn btn-primary" style={{ width: '100%', marginTop: '8px' }}>
+            Add Application to Pipeline
+          </button>
+        </form>
+      </Modal>
+
+      {/* Style for Kanban Columns on Smaller Screens */}
+      <style>{`
+        @media (max-width: 1024px) {
+          .pipeline-columns-container {
+            grid-template-columns: 1fr !important;
+          }
+        }
+      `}</style>
     </div>
   );
 }

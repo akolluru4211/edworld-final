@@ -13,14 +13,17 @@ import {
   FolderGit2, 
   Code,
   Share2,
-  Eye
+  Eye,
+  Edit3
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { useNotification } from '../context/NotificationContext';
 import { getUserProjects } from '../services/firestoreService';
+import { PageHeader } from '../components/common/UIComponents';
+import UserAvatar from '../components/common/UserAvatar';
 
 export default function PortfolioPage() {
-  const { user, userProfile, updateProfileData } = useAuth();
+  const { firebaseUser, profile, updateProfileData } = useAuth();
   const { showToast } = useNotification();
   const [projects, setProjects] = useState([]);
   const [bio, setBio] = useState('');
@@ -30,30 +33,21 @@ export default function PortfolioPage() {
   const [portfolioUrl, setPortfolioUrl] = useState('');
   const [loading, setLoading] = useState(false);
 
+  // Mobile segmented tab: 'editor' | 'preview'
+  const [mobileTab, setMobileTab] = useState('editor');
+
   useEffect(() => {
-    if (userProfile) {
-      setBio(userProfile.bio || '');
-      setHeadline(userProfile.headline || '');
-      setGithub(userProfile.github || '');
-      setLinkedin(userProfile.linkedin || '');
-      setPortfolioUrl(userProfile.portfolioUrl || '');
+    if (profile) {
+      setBio(profile.bio || '');
+      setHeadline(profile.headline || '');
+      setGithub(profile.github || '');
+      setLinkedin(profile.linkedin || '');
+      setPortfolioUrl(profile.portfolioUrl || '');
     }
-    if (user) {
-      getUserProjects(user.uid).then(p => setProjects(p));
+    if (firebaseUser) {
+      getUserProjects(firebaseUser.uid).then(p => setProjects(p || []));
     }
-  }, [user, userProfile]);
-
-  // Calculate Portfolio Quality Index (0 - 100)
-  const calculatePQI = () => {
-    let pqi = 40;
-    if (headline) pqi += 15;
-    if (bio && bio.length > 50) pqi += 15;
-    if (github && linkedin) pqi += 15;
-    if (projects.length >= 1) pqi += 15;
-    return Math.min(100, pqi);
-  };
-
-  const pqiScore = calculatePQI();
+  }, [firebaseUser, profile]);
 
   const handleSavePortfolio = async (e) => {
     e.preventDefault();
@@ -74,162 +68,218 @@ export default function PortfolioPage() {
     }
   };
 
-  return (
-    <div className="portfolio-page">
-      {/* 1. HEADER */}
-      <div className="hero-banner" style={{ padding: '36px 32px', marginBottom: '28px' }}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '20px' }}>
-          <div>
-            <div style={{ display: 'inline-flex', alignItems: 'center', gap: '8px', background: 'rgba(99, 102, 241, 0.18)', border: '1px solid rgba(99, 102, 241, 0.35)', padding: '4px 12px', borderRadius: 'var(--radius-full)', marginBottom: '10px' }}>
-              <Sparkles size={14} color="var(--primary)" />
-              <span style={{ fontSize: '0.78rem', fontWeight: '800', color: '#a5b4fc', textTransform: 'uppercase' }}>
-                Developer Showcase OS
-              </span>
-            </div>
-            <h1 style={{ fontSize: '2.2rem', fontWeight: '800', marginBottom: '6px' }}>
-              Portfolio Builder
-            </h1>
-            <p style={{ color: 'var(--text-muted)', fontSize: '0.95rem', maxWidth: '640px' }}>
-              Customize your public engineering showcase at <strong style={{ color: '#fff' }}>edworld.co.in/u/{userProfile?.username || 'user'}</strong>.
-            </p>
-          </div>
+  const username = profile?.username || 'user';
+  const publicUrl = `/u/${username}`;
 
+  return (
+    <div className="portfolio-page" style={{ paddingBottom: '50px' }}>
+      
+      {/* 1. HEADER */}
+      <PageHeader 
+        badge="Developer Portfolio Builder"
+        title="Developer Portfolio & Public Showcase"
+        description={`Customize your verified public developer passport at edworld.co.in/u/${username}`}
+        action={
           <div style={{ display: 'flex', gap: '10px' }}>
-            <Link to={`/u/${userProfile?.username || 'user'}`} target="_blank" className="btn btn-secondary btn-sm">
-              <Eye size={14} /> Live Preview
+            <Link to={publicUrl} target="_blank" className="btn btn-secondary btn-sm">
+              <Eye size={14} /> View Live Profile
             </Link>
           </div>
+        }
+      />
+
+      {/* 2. MOBILE TAB SELECTOR */}
+      <div className="show-on-mobile" style={{ marginBottom: '18px' }}>
+        <div className="nav-tabs" style={{ width: '100%', justifyContent: 'space-around' }}>
+          <button 
+            onClick={() => setMobileTab('editor')}
+            className={`nav-tab ${mobileTab === 'editor' ? 'active' : ''}`}
+            style={{ flex: 1, justifyContent: 'center' }}
+          >
+            <Edit3 size={14} /> Content Editor
+          </button>
+          <button 
+            onClick={() => setMobileTab('preview')}
+            className={`nav-tab ${mobileTab === 'preview' ? 'active' : ''}`}
+            style={{ flex: 1, justifyContent: 'center' }}
+          >
+            <Eye size={14} /> Live Preview
+          </button>
         </div>
       </div>
 
-      <div className="grid-2">
-        {/* Left Column: Configuration Form */}
-        <div className="glass-card">
-          <h3 style={{ fontSize: '1.25rem', fontWeight: '800', marginBottom: '16px', borderBottom: '1px solid var(--border-subtle)', paddingBottom: '12px' }}>
-            Portfolio Profile Information
+      {/* 3. SPLIT WORKSPACE: EDITOR (LEFT) | LIVE PREVIEW (RIGHT) */}
+      <div style={{
+        display: 'grid',
+        gridTemplateColumns: 'minmax(320px, 1fr) minmax(420px, 1.2fr)',
+        gap: '24px',
+        alignItems: 'start'
+      }} className="portfolio-split-grid">
+        
+        {/* LEFT COLUMN: PORTFOLIO CONFIG EDITOR */}
+        <div 
+          className="glass-card" 
+          style={{ 
+            padding: '24px',
+            display: (mobileTab === 'editor' || window.innerWidth >= 1024) ? 'block' : 'none'
+          }}
+        >
+          <h3 style={{ fontSize: '1.2rem', fontWeight: '800', marginBottom: '18px' }}>
+            Showcase Content
           </h3>
 
           <form onSubmit={handleSavePortfolio}>
             <div className="form-group">
               <label className="form-label">Professional Headline</label>
               <input 
-                type="text" 
-                className="input-field" 
-                placeholder="e.g. Full Stack Developer | Building Scalable Cloud Apps"
+                type="text"
+                className="form-input"
                 value={headline}
                 onChange={(e) => setHeadline(e.target.value)}
+                placeholder="e.g. Full Stack Developer | Distributed Systems & React"
               />
             </div>
 
             <div className="form-group">
-              <label className="form-label">Bio & Engineering Philosophy</label>
+              <label className="form-label">Developer Bio & Story</label>
               <textarea 
-                className="textarea-field" 
+                className="form-textarea"
                 rows={4}
-                placeholder="Share your technical interests, favorite stacks, and what drives your engineering curiosity..."
                 value={bio}
                 onChange={(e) => setBio(e.target.value)}
+                placeholder="Share your engineering focus, passion projects, and technical journey..."
               />
             </div>
 
-            <div className="grid-2-even" style={{ gap: '14px', marginBottom: '16px' }}>
-              <div>
-                <label className="form-label">GitHub URL</label>
-                <input 
-                  type="url" 
-                  className="input-field" 
-                  placeholder="https://github.com/yourusername"
-                  value={github}
-                  onChange={(e) => setGithub(e.target.value)}
-                />
-              </div>
-
-              <div>
-                <label className="form-label">LinkedIn URL</label>
-                <input 
-                  type="url" 
-                  className="input-field" 
-                  placeholder="https://linkedin.com/in/yourprofile"
-                  value={linkedin}
-                  onChange={(e) => setLinkedin(e.target.value)}
-                />
-              </div>
+            <div className="form-group">
+              <label className="form-label">GitHub Username</label>
+              <input 
+                type="text"
+                className="form-input"
+                value={github}
+                onChange={(e) => setGithub(e.target.value)}
+                placeholder="e.g. octocat"
+              />
             </div>
 
             <div className="form-group">
-              <label className="form-label">Personal Domain / Website URL (Optional)</label>
+              <label className="form-label">LinkedIn Username / URL</label>
               <input 
-                type="url" 
-                className="input-field" 
-                placeholder="https://yourportfolio.dev"
+                type="text"
+                className="form-input"
+                value={linkedin}
+                onChange={(e) => setLinkedin(e.target.value)}
+                placeholder="e.g. in/username"
+              />
+            </div>
+
+            <div className="form-group">
+              <label className="form-label">Custom External Domain / Website</label>
+              <input 
+                type="url"
+                className="form-input"
                 value={portfolioUrl}
                 onChange={(e) => setPortfolioUrl(e.target.value)}
+                placeholder="https://mysite.com"
               />
             </div>
 
             <button type="submit" disabled={loading} className="btn btn-primary" style={{ width: '100%', marginTop: '10px' }}>
-              <Save size={16} /> {loading ? 'Saving...' : 'Save & Publish Portfolio'}
+              <Save size={15} /> {loading ? 'Saving...' : 'Save & Publish Portfolio'}
             </button>
           </form>
         </div>
 
-        {/* Right Column: Portfolio Quality Index & Featured Case Studies */}
-        <div>
-          {/* Quality Index Card */}
-          <div className="glass-card" style={{ marginBottom: '24px' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '14px' }}>
-              <h3 style={{ fontSize: '1.1rem', fontWeight: '700' }}>Portfolio Quality Index</h3>
-              <span style={{ fontSize: '1.4rem', fontWeight: '800', color: 'var(--emerald)' }}>
-                {pqiScore} / 100
-              </span>
-            </div>
+        {/* RIGHT COLUMN: LIVE INTERACTIVE PREVIEW */}
+        <div 
+          className="glass-card" 
+          style={{ 
+            padding: '28px',
+            display: (mobileTab === 'preview' || window.innerWidth >= 1024) ? 'block' : 'none',
+            background: 'linear-gradient(180deg, rgba(18, 26, 44, 0.95) 0%, rgba(15, 23, 42, 0.98) 100%)',
+            border: '1px solid var(--border-glow)'
+          }}
+        >
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px', borderBottom: '1px solid var(--border-subtle)', paddingBottom: '12px' }}>
+            <span className="badge badge-primary" style={{ fontSize: '0.72rem' }}>
+              ● Live Preview at edworld.co.in/u/{username}
+            </span>
+            <Link to={publicUrl} target="_blank" className="btn btn-ghost btn-sm" style={{ padding: '4px 8px', fontSize: '0.78rem' }}>
+              Open <ExternalLink size={13} />
+            </Link>
+          </div>
 
-            <div className="readiness-meter" style={{ marginBottom: '16px' }}>
-              <div className="readiness-fill" style={{ width: `${pqiScore}%` }} />
-            </div>
-
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', fontSize: '0.82rem' }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', color: headline ? 'var(--emerald)' : 'var(--text-dim)' }}>
-                <CheckCircle size={14} /> Clear Professional Headline (+15)
+          {/* Profile Header Preview */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: '18px', marginBottom: '20px' }}>
+            <UserAvatar 
+              name={profile?.displayName} 
+              photoURL={profile?.photoURL} 
+              size={68} 
+            />
+            <div>
+              <h2 style={{ fontSize: '1.4rem', fontWeight: '800', color: '#fff' }}>
+                {profile?.displayName || 'Your Name'}
+              </h2>
+              <div style={{ fontSize: '0.88rem', color: 'var(--secondary)', fontWeight: '700' }}>
+                {headline || 'Aspiring Software Engineer'}
               </div>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', color: bio ? 'var(--emerald)' : 'var(--text-dim)' }}>
-                <CheckCircle size={14} /> Comprehensive Engineering Bio (+15)
-              </div>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', color: github && linkedin ? 'var(--emerald)' : 'var(--text-dim)' }}>
-                <CheckCircle size={14} /> GitHub & LinkedIn Verification Links (+15)
-              </div>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', color: projects.length > 0 ? 'var(--emerald)' : 'var(--text-dim)' }}>
-                <CheckCircle size={14} /> Studio Projects Linked (+15)
+              <div style={{ fontSize: '0.78rem', color: 'var(--text-muted)', marginTop: '2px' }}>
+                {profile?.college || 'Institution'}
               </div>
             </div>
           </div>
 
-          {/* Linked Studio Projects */}
-          <div className="glass-card">
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '14px', borderBottom: '1px solid var(--border-subtle)', paddingBottom: '10px' }}>
-              <h4 style={{ fontWeight: '700', fontSize: '0.98rem' }}>Showcased Projects ({projects.length})</h4>
-              <Link to="/studio" className="btn btn-outline btn-sm" style={{ padding: '4px 8px', fontSize: '0.75rem' }}>
-                Add in Studio
-              </Link>
-            </div>
+          {/* Bio Preview */}
+          {bio && (
+            <p style={{ fontSize: '0.88rem', color: 'var(--text-body)', lineHeight: '1.6', marginBottom: '20px' }}>
+              {bio}
+            </p>
+          )}
 
-            {projects.length === 0 ? (
-              <p style={{ color: 'var(--text-muted)', fontSize: '0.82rem' }}>
-                No projects linked yet. Add projects in Studio to feature them in your portfolio.
-              </p>
-            ) : (
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
-                {projects.slice(0, 3).map(p => (
-                  <div key={p.id} style={{ background: 'rgba(255, 255, 255, 0.02)', padding: '10px 14px', borderRadius: '8px', border: '1px solid var(--border-subtle)' }}>
-                    <div style={{ fontWeight: '700', fontSize: '0.88rem' }}>{p.title}</div>
-                    <div style={{ fontSize: '0.78rem', color: 'var(--text-muted)' }}>{p.tagline}</div>
+          {/* Skills Badges */}
+          <div style={{ marginBottom: '20px' }}>
+            <div style={{ fontSize: '0.8rem', fontWeight: '800', color: 'var(--text-muted)', textTransform: 'uppercase', marginBottom: '8px' }}>
+              Verified Skills Matrix
+            </div>
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
+              {profile?.skills?.map((s, i) => (
+                <span key={i} className="badge badge-primary" style={{ fontSize: '0.74rem' }}>
+                  ✓ {s}
+                </span>
+              )) || <span style={{ color: 'var(--text-dim)', fontSize: '0.8rem' }}>No skills added</span>}
+            </div>
+          </div>
+
+          {/* Projects Preview */}
+          <div>
+            <div style={{ fontSize: '0.8rem', fontWeight: '800', color: 'var(--text-muted)', textTransform: 'uppercase', marginBottom: '10px' }}>
+              Proof of Work Showcase ({projects.length})
+            </div>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+              {projects.slice(0, 3).map(p => (
+                <div key={p.id} style={{ background: 'rgba(15, 23, 42, 0.7)', padding: '14px', borderRadius: 'var(--radius-md)', border: '1px solid var(--border-subtle)' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <div style={{ fontWeight: '800', fontSize: '0.92rem', color: '#fff' }}>{p.title}</div>
+                    {p.verificationStatus === 'verified' && <span className="badge badge-success" style={{ fontSize: '0.68rem' }}>✓ Verified</span>}
                   </div>
-                ))}
-              </div>
-            )}
+                  <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)', marginTop: '2px' }}>
+                    {p.techStack?.join(' · ')}
+                  </div>
+                </div>
+              ))}
+            </div>
           </div>
         </div>
+
       </div>
+
+      <style>{`
+        @media (max-width: 1024px) {
+          .portfolio-split-grid {
+            grid-template-columns: 1fr !important;
+          }
+        }
+      `}</style>
     </div>
   );
 }

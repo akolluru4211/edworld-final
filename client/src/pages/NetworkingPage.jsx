@@ -6,15 +6,14 @@ import {
   UserPlus, 
   Check, 
   ExternalLink, 
-  Award, 
   MapPin, 
   GraduationCap, 
-  Clock, 
   CheckCircle, 
-  X,
-  Sparkles,
-  Inbox,
-  UserCheck
+  X, 
+  Sparkles, 
+  UserCheck,
+  User,
+  ShieldCheck
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { useNotification } from '../context/NotificationContext';
@@ -26,9 +25,10 @@ import {
   getConnectedUsers 
 } from '../services/firestoreService';
 import UserAvatar from '../components/common/UserAvatar';
+import { EmptyState, PageHeader } from '../components/common/UIComponents';
 
 export default function NetworkingPage() {
-  const { user, userProfile } = useAuth();
+  const { firebaseUser, profile } = useAuth();
   const { showToast } = useNotification();
   const [activeTab, setActiveTab] = useState('discover'); // 'discover' | 'requests' | 'connections'
   const [peers, setPeers] = useState([]);
@@ -40,13 +40,13 @@ export default function NetworkingPage() {
   const [sentRequestUids, setSentRequestUids] = useState(new Set());
 
   const loadNetworkData = async () => {
-    if (!user) return;
+    if (!firebaseUser) return;
     setLoading(true);
     try {
       const [profiles, requestsData, conns] = await Promise.all([
-        getPublicProfiles(user.uid, { search: searchTerm }),
-        getConnectionRequests(user.uid),
-        getConnectedUsers(user.uid)
+        getPublicProfiles(firebaseUser.uid, { search: searchTerm }),
+        getConnectionRequests(firebaseUser.uid),
+        getConnectedUsers(firebaseUser.uid)
       ]);
 
       setPeers(profiles || []);
@@ -65,7 +65,7 @@ export default function NetworkingPage() {
 
   useEffect(() => {
     loadNetworkData();
-  }, [user]);
+  }, [firebaseUser]);
 
   const handleSearch = (e) => {
     e.preventDefault();
@@ -73,14 +73,14 @@ export default function NetworkingPage() {
   };
 
   const handleConnect = async (peer) => {
-    if (!user) return;
+    if (!firebaseUser) return;
     try {
       await sendConnectionRequest(
-        { uid: user.uid, displayName: userProfile?.displayName, headline: userProfile?.headline, photoURL: userProfile?.photoURL },
+        { uid: firebaseUser.uid, displayName: profile?.displayName, headline: profile?.headline, photoURL: profile?.photoURL },
         { uid: peer.uid, displayName: peer.displayName, photoURL: peer.photoURL }
       );
       setSentRequestUids(prev => new Set(prev).add(peer.uid));
-      showToast(`Connection request sent to ${peer.displayName || 'peer'}!`);
+      showToast(`Connection request sent to ${peer.displayName || 'peer'}! 🎉`);
     } catch (err) {
       showToast('Failed to send connection request', 'error');
     }
@@ -93,264 +93,228 @@ export default function NetworkingPage() {
         accept, 
         request.fromUserId, 
         request.toUserId,
-        { displayName: userProfile?.displayName },
+        { displayName: profile?.displayName },
         { displayName: request.fromUserName }
       );
 
       setIncomingRequests(prev => prev.filter(r => r.id !== request.id));
-      showToast(accept ? 'Connection accepted! 🎉' : 'Request declined.', accept ? 'success' : 'info');
+      showToast(accept ? 'Connection request accepted! 🤝' : 'Request declined.');
       loadNetworkData();
     } catch (err) {
-      showToast('Failed to respond to request', 'error');
+      showToast('Failed to respond to connection request', 'error');
     }
   };
 
+  const isConnected = (uid) => {
+    return connectedUsers.some(u => u.uid === uid || u.id === uid);
+  };
+
   return (
-    <div className="networking-page" style={{ paddingBottom: '60px' }}>
-      {/* 1. HERO HEADER */}
-      <div className="glass-card" style={{ padding: '28px 24px', marginBottom: '20px', background: 'linear-gradient(135deg, rgba(18, 26, 44, 0.95) 0%, rgba(15, 23, 42, 0.95) 100%)' }}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '14px' }}>
-          <div>
-            <div style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', background: 'rgba(192, 132, 252, 0.18)', border: '1px solid rgba(192, 132, 252, 0.35)', padding: '4px 10px', borderRadius: 'var(--radius-full)', marginBottom: '8px' }}>
-              <Users size={13} color="#c084fc" />
-              <span style={{ fontSize: '0.75rem', fontWeight: '800', color: '#e9d5ff', textTransform: 'uppercase' }}>
-                Peer Directory
-              </span>
+    <div className="networking-page" style={{ paddingBottom: '50px' }}>
+      
+      {/* 1. HEADER */}
+      <PageHeader 
+        badge="Peer Community"
+        title="Student Developer Network"
+        description="Find and connect with real engineers, squad collaborators, and peers building across universities."
+      />
+
+      {/* 2. SEARCH & NAVIGATION TABS */}
+      <div className="glass-card" style={{ padding: '16px 20px', marginBottom: '24px' }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '16px' }}>
+          
+          <form onSubmit={handleSearch} style={{ flex: 1, minWidth: '260px', display: 'flex', alignItems: 'center', background: 'rgba(15, 23, 42, 0.8)', border: '1px solid var(--border-medium)', borderRadius: 'var(--radius-md)', padding: '0 12px' }}>
+            <Search size={18} color="var(--primary)" style={{ marginRight: '8px' }} />
+            <input 
+              type="text"
+              placeholder="Search peers by name, skills (React, Python), college, or goal..."
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+              style={{
+                width: '100%',
+                background: 'transparent',
+                border: 'none',
+                color: '#fff',
+                padding: '10px 0',
+                outline: 'none',
+                fontFamily: 'var(--font-sans)',
+                fontSize: '0.9rem'
+              }}
+            />
+          </form>
+
+          <div className="nav-tabs">
+            <button
+              onClick={() => setActiveTab('discover')}
+              className={`nav-tab ${activeTab === 'discover' ? 'active' : ''}`}
+            >
+              <Users size={14} /> Discover Peers ({peers.length})
+            </button>
+            <button
+              onClick={() => setActiveTab('requests')}
+              className={`nav-tab ${activeTab === 'requests' ? 'active' : ''}`}
+            >
+              <UserPlus size={14} /> Requests ({incomingRequests.length})
+            </button>
+            <button
+              onClick={() => setActiveTab('connections')}
+              className={`nav-tab ${activeTab === 'connections' ? 'active' : ''}`}
+            >
+              <UserCheck size={14} /> Connected ({connectedUsers.length})
+            </button>
+          </div>
+        </div>
+      </div>
+
+      {/* 3. TAB CONTENT */}
+      {loading ? (
+        <div className="grid-3">
+          {[1, 2, 3, 4, 5, 6].map(i => (
+            <div key={i} className="glass-card" style={{ height: '220px' }}>
+              <div className="skeleton" style={{ height: '50px', width: '50px', borderRadius: '50%', marginBottom: '12px' }} />
+              <div className="skeleton" style={{ height: '18px', width: '60%', marginBottom: '6px' }} />
+              <div className="skeleton" style={{ height: '14px', width: '80%' }} />
             </div>
-            <h1 style={{ fontSize: '1.8rem', fontWeight: '800', marginBottom: '4px' }}>
-              Student Engineer Network
-            </h1>
-            <p style={{ color: 'var(--text-muted)', fontSize: '0.88rem', margin: 0 }}>
-              Connect with fellow developers, build project teams, and exchange verified peer feedback.
-            </p>
-          </div>
-
-          <div style={{ display: 'flex', gap: '10px' }}>
-            <span className="badge badge-primary" style={{ padding: '6px 12px', fontSize: '0.82rem' }}>
-              {connectedUsers.length} Connections
-            </span>
-          </div>
+          ))}
         </div>
-      </div>
+      ) : activeTab === 'discover' ? (
+        peers.length === 0 ? (
+          <EmptyState 
+            icon={Users}
+            title="You're one of the first people on EdWorld"
+            description="More students and peer engineers will appear here as they complete their developer identity."
+            secondaryActionText="Share Profile Passport"
+            secondaryActionLink={`/u/${profile?.username || ''}`}
+          />
+        ) : (
+          <div className="grid-3">
+            {peers.map(peer => {
+              const isReq = sentRequestUids.has(peer.uid);
+              const conn = isConnected(peer.uid);
 
-      {/* 2. NAVIGATION SEGMENT TABS */}
-      <div style={{ marginBottom: '20px' }}>
-        <div className="segment-tabs-container">
-          <button
-            onClick={() => setActiveTab('discover')}
-            className={`segment-tab-btn ${activeTab === 'discover' ? 'active' : ''}`}
-          >
-            <Users size={15} /> Discover Peers ({peers.length})
-          </button>
-          <button
-            onClick={() => setActiveTab('requests')}
-            className={`segment-tab-btn ${activeTab === 'requests' ? 'active' : ''}`}
-          >
-            <Inbox size={15} /> Requests {incomingRequests.length > 0 ? `(${incomingRequests.length})` : ''}
-          </button>
-          <button
-            onClick={() => setActiveTab('connections')}
-            className={`segment-tab-btn ${activeTab === 'connections' ? 'active' : ''}`}
-          >
-            <UserCheck size={15} /> My Network ({connectedUsers.length})
-          </button>
-        </div>
-      </div>
-
-      {/* 3. DISCOVER TAB */}
-      {activeTab === 'discover' && (
-        <div>
-          {/* Search Input */}
-          <div className="glass-card" style={{ padding: '16px 20px', marginBottom: '20px' }}>
-            <form onSubmit={handleSearch} style={{ display: 'flex', gap: '10px' }}>
-              <div style={{ position: 'relative', flex: 1 }}>
-                <Search size={16} color="var(--text-muted)" style={{ position: 'absolute', left: '14px', top: '14px' }} />
-                <input 
-                  type="text" 
-                  className="input-field" 
-                  style={{ paddingLeft: '38px' }}
-                  placeholder="Search by name, skills, college, or career goal..."
-                  value={searchTerm}
-                  onChange={(e) => setSearchTerm(e.target.value)}
-                />
-              </div>
-              <button type="submit" className="btn btn-primary btn-sm" style={{ padding: '0 20px' }}>
-                Search
-              </button>
-            </form>
-          </div>
-
-          {/* User Cards Grid */}
-          <div className="responsive-grid-2">
-            {peers.length === 0 ? (
-              <div className="glass-card" style={{ padding: '48px 20px', textAlign: 'center', gridColumn: '1 / -1' }}>
-                <Users size={40} color="var(--text-dim)" style={{ margin: '0 auto 12px' }} />
-                <h3 style={{ fontSize: '1.15rem', fontWeight: '800', marginBottom: '4px' }}>No student profiles found</h3>
-                <p style={{ color: 'var(--text-muted)', fontSize: '0.88rem' }}>
-                  {searchTerm ? 'Try broadening your search query.' : 'When other students complete onboarding, they will appear in this directory.'}
-                </p>
-              </div>
-            ) : (
-              peers.map(peer => {
-                const isSent = sentRequestUids.has(peer.uid);
-                return (
-                  <div key={peer.uid} className="glass-card" style={{ padding: '20px', display: 'flex', flexDirection: 'column' }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '14px', marginBottom: '12px' }}>
-                      <UserAvatar 
-                        name={peer.displayName} 
-                        photoURL={peer.photoURL} 
-                        size={50} 
-                      />
-                      <div style={{ minWidth: 0, flex: 1 }}>
-                        <h3 style={{ fontSize: '1.05rem', fontWeight: '800', margin: 0, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                          {peer.displayName}
-                        </h3>
-                        {peer.username && (
-                          <div style={{ fontSize: '0.78rem', color: 'var(--secondary)', fontWeight: '700' }}>
-                            @{peer.username}
-                          </div>
-                        )}
-                        {peer.headline && (
-                          <div style={{ fontSize: '0.78rem', color: 'var(--text-muted)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                            {peer.headline}
-                          </div>
-                        )}
+              return (
+                <div 
+                  key={peer.id || peer.uid}
+                  className="glass-card"
+                  style={{
+                    padding: '22px',
+                    display: 'flex',
+                    flexDirection: 'column',
+                    gap: '14px'
+                  }}
+                >
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '14px' }}>
+                    <UserAvatar 
+                      name={peer.displayName} 
+                      photoURL={peer.photoURL} 
+                      size={54} 
+                    />
+                    <div style={{ minWidth: 0, flex: 1 }}>
+                      <div style={{ fontWeight: '800', fontSize: '1.05rem', color: '#fff', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                        {peer.displayName || 'Peer'}
                       </div>
+                      <div style={{ fontSize: '0.8rem', color: 'var(--secondary)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', marginTop: '1px' }}>
+                        {peer.headline || 'Software Engineer'}
+                      </div>
+                      {peer.college && (
+                        <div style={{ fontSize: '0.74rem', color: 'var(--text-muted)', marginTop: '2px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                          {peer.college}
+                        </div>
+                      )}
+                    </div>
+                  </div>
 
-                      {peer.careerScore !== undefined && peer.careerScore !== null && (
-                        <span className="badge badge-emerald" style={{ fontSize: '0.7rem', flexShrink: 0 }}>
-                          {peer.careerScore} Score
+                  {peer.skills && peer.skills.length > 0 && (
+                    <div style={{ display: 'flex', gap: '5px', flexWrap: 'wrap' }}>
+                      {peer.skills.slice(0, 3).map((sk, i) => (
+                        <span key={i} className="badge badge-neutral" style={{ fontSize: '0.7rem' }}>
+                          {sk}
                         </span>
-                      )}
+                      ))}
                     </div>
+                  )}
 
-                    {peer.college && (
-                      <div style={{ fontSize: '0.78rem', color: 'var(--text-muted)', marginBottom: '12px' }}>
-                        🎓 {peer.college}
-                      </div>
-                    )}
+                  <div style={{ marginTop: 'auto', paddingTop: '12px', borderTop: '1px solid var(--border-subtle)', display: 'flex', gap: '8px' }}>
+                    <Link 
+                      to={`/u/${peer.username || ''}`}
+                      className="btn btn-secondary btn-sm"
+                      style={{ flex: 1 }}
+                    >
+                      View Passport
+                    </Link>
 
-                    {/* Skills Tags */}
-                    {peer.skills && peer.skills.length > 0 && (
-                      <div style={{ display: 'flex', gap: '4px', flexWrap: 'wrap', marginBottom: '16px' }}>
-                        {peer.skills.slice(0, 4).map((s, idx) => (
-                          <span key={idx} className="badge badge-primary" style={{ fontSize: '0.65rem' }}>{s}</span>
-                        ))}
-                      </div>
-                    )}
-
-                    {/* Action Buttons */}
-                    <div style={{ display: 'flex', gap: '10px', marginTop: 'auto' }}>
-                      <button 
-                        onClick={() => handleConnect(peer)}
-                        disabled={isSent}
-                        className={`btn ${isSent ? 'btn-secondary' : 'btn-primary'} btn-sm`}
-                        style={{ flex: 1, justifyContent: 'center' }}
-                      >
-                        {isSent ? 'Request Sent' : <><UserPlus size={14} /> Connect</>}
-                      </button>
-
-                      {peer.username && (
-                        <Link 
-                          to={`/u/${peer.username}`} 
-                          className="btn btn-outline btn-sm"
-                          style={{ padding: '0 14px' }}
-                        >
-                          <ExternalLink size={13} /> Passport
-                        </Link>
-                      )}
-                    </div>
-                  </div>
-                );
-              })
-            )}
-          </div>
-        </div>
-      )}
-
-      {/* 4. REQUESTS TAB */}
-      {activeTab === 'requests' && (
-        <div style={{ maxWidth: '680px', margin: '0 auto' }}>
-          <div className="glass-card" style={{ padding: '24px' }}>
-            <h3 style={{ fontSize: '1.15rem', fontWeight: '800', marginBottom: '16px', borderBottom: '1px solid var(--border-subtle)', paddingBottom: '10px' }}>
-              Incoming Connection Requests ({incomingRequests.length})
-            </h3>
-
-            {incomingRequests.length === 0 ? (
-              <div style={{ textAlign: 'center', padding: '28px 0', color: 'var(--text-muted)' }}>
-                <p style={{ fontSize: '0.88rem' }}>No pending requests at this time.</p>
-              </div>
-            ) : (
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-                {incomingRequests.map(req => (
-                  <div key={req.id} style={{ background: 'rgba(255,255,255,0.02)', padding: '14px', borderRadius: 'var(--radius-md)', border: '1px solid var(--border-subtle)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '10px' }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-                      <UserAvatar 
-                        name={req.fromUserName} 
-                        photoURL={req.fromUserAvatar} 
-                        size={40} 
-                      />
-                      <div>
-                        <div style={{ fontWeight: '700', fontSize: '0.92rem' }}>{req.fromUserName}</div>
-                        {req.fromUserHeadline && (
-                          <div style={{ fontSize: '0.78rem', color: 'var(--text-muted)' }}>{req.fromUserHeadline}</div>
-                        )}
-                      </div>
-                    </div>
-
-                    <div style={{ display: 'flex', gap: '8px' }}>
-                      <button onClick={() => handleRespond(req, true)} className="btn btn-primary btn-sm">
-                        Accept
-                      </button>
-                      <button onClick={() => handleRespond(req, false)} className="btn btn-secondary btn-sm">
-                        Decline
-                      </button>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
-        </div>
-      )}
-
-      {/* 5. MY CONNECTIONS TAB */}
-      {activeTab === 'connections' && (
-        <div className="responsive-grid-2">
-          {connectedUsers.length === 0 ? (
-            <div className="glass-card" style={{ padding: '48px 20px', textAlign: 'center', gridColumn: '1 / -1' }}>
-              <UserCheck size={40} color="var(--text-dim)" style={{ margin: '0 auto 12px' }} />
-              <h3 style={{ fontSize: '1.15rem', fontWeight: '800', marginBottom: '4px' }}>No active connections yet</h3>
-              <p style={{ color: 'var(--text-muted)', fontSize: '0.88rem' }}>
-                Discover fellow student engineers on the Discover tab and send connection requests.
-              </p>
-            </div>
-          ) : (
-            connectedUsers.map(conn => (
-              <div key={conn.id} className="glass-card" style={{ padding: '16px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-                  <UserAvatar 
-                    name={conn.displayName} 
-                    photoURL={conn.photoURL} 
-                    size={44} 
-                  />
-                  <div>
-                    <div style={{ fontWeight: '700', fontSize: '0.92rem' }}>{conn.displayName}</div>
-                    {conn.username && (
-                      <div style={{ fontSize: '0.78rem', color: 'var(--secondary)' }}>@{conn.username}</div>
-                    )}
+                    <button 
+                      onClick={() => handleConnect(peer)}
+                      disabled={isReq || conn}
+                      className={`btn btn-sm ${conn ? 'btn-outline' : isReq ? 'btn-secondary' : 'btn-primary'}`}
+                      style={{ flex: 1 }}
+                    >
+                      {conn ? 'Connected' : isReq ? 'Requested' : 'Connect'}
+                    </button>
                   </div>
                 </div>
-                {conn.username && (
-                  <Link to={`/u/${conn.username}`} className="btn btn-secondary btn-sm">
-                    View Passport
-                  </Link>
-                )}
+              );
+            })}
+          </div>
+        )
+      ) : activeTab === 'requests' ? (
+        incomingRequests.length === 0 ? (
+          <EmptyState 
+            icon={UserPlus}
+            title="No pending requests"
+            description="When peers request to connect with you, they will appear here."
+          />
+        ) : (
+          <div className="grid-2">
+            {incomingRequests.map(req => (
+              <div key={req.id} className="glass-card" style={{ padding: '20px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '14px' }}>
+                  <UserAvatar name={req.fromUserName} photoURL={req.fromUserAvatar} size={48} />
+                  <div>
+                    <div style={{ fontWeight: '800', fontSize: '0.95rem', color: '#fff' }}>{req.fromUserName}</div>
+                    <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>{req.fromUserHeadline || 'Software Engineer'}</div>
+                  </div>
+                </div>
+
+                <div style={{ display: 'flex', gap: '8px' }}>
+                  <button onClick={() => handleRespond(req, true)} className="btn btn-primary btn-sm">
+                    Accept
+                  </button>
+                  <button onClick={() => handleRespond(req, false)} className="btn btn-outline btn-sm">
+                    Decline
+                  </button>
+                </div>
               </div>
-            ))
-          )}
-        </div>
+            ))}
+          </div>
+        )
+      ) : (
+        connectedUsers.length === 0 ? (
+          <EmptyState 
+            icon={UserCheck}
+            title="No connections yet"
+            description="Connect with fellow engineers to expand your developer squad."
+            actionText="Discover Peers"
+            onAction={() => setActiveTab('discover')}
+          />
+        ) : (
+          <div className="grid-3">
+            {connectedUsers.map(conn => (
+              <div key={conn.id} className="glass-card" style={{ padding: '20px', display: 'flex', alignItems: 'center', gap: '14px' }}>
+                <UserAvatar name={conn.displayName} photoURL={conn.photoURL} size={48} />
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ fontWeight: '800', fontSize: '0.92rem', color: '#fff' }}>{conn.displayName}</div>
+                  <div style={{ fontSize: '0.78rem', color: 'var(--secondary)' }}>{conn.headline || 'Engineer'}</div>
+                </div>
+                <Link to={`/u/${conn.username || ''}`} className="btn btn-secondary btn-sm" style={{ padding: '6px 10px' }}>
+                  Profile
+                </Link>
+              </div>
+            ))}
+          </div>
+        )
       )}
+
     </div>
   );
 }
