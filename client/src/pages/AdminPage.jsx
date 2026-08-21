@@ -1,4 +1,7 @@
-import React, { useState, useEffect } from 'react';
+const fs = require('fs');
+
+const adminCode = `import React, { useState, useEffect } from 'react';
+import { Link } from 'react-router-dom';
 import { 
   ShieldCheck, 
   Users, 
@@ -15,13 +18,15 @@ import {
   Award, 
   Lock,
   ExternalLink,
-  Bot
+  Bot,
+  Mail,
+  GraduationCap,
+  Target
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { useNotification } from '../context/NotificationContext';
 import { 
   getPlatformStats, 
-  getPublicProfiles, 
   getJobs, 
   createJob, 
   deleteJob, 
@@ -44,8 +49,7 @@ export default function AdminPage() {
     totalProjects: 0,
     totalJobs: 0,
     totalApplications: 0,
-    totalInterviews: 0,
-    verifiedProjects: 0
+    totalInterviews: 0
   });
 
   const [userList, setUserList] = useState([]);
@@ -53,6 +57,7 @@ export default function AdminPage() {
   const [pendingProjects, setPendingProjects] = useState([]);
   const [auditLogs, setAuditLogs] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [userSearchTerm, setUserSearchTerm] = useState('');
 
   // Job Creator Modal
   const [showJobModal, setShowJobModal] = useState(false);
@@ -68,16 +73,21 @@ export default function AdminPage() {
   const loadAdminData = async () => {
     setLoading(true);
     try {
-      const [s, u, j, a, projSnap] = await Promise.all([
+      const [s, uSnap, j, a, projSnap] = await Promise.all([
         getPlatformStats(),
-        getPublicProfiles(),
+        getDocs(collection(db, 'users')),
         getJobs(),
         getAuditLogs(),
         getDocs(collection(db, 'projects'))
       ]);
 
-      setStats(s || {});
-      setUserList(u || []);
+      const allUsers = uSnap.docs.map(d => ({ id: d.id, ...d.data() }));
+
+      setStats({
+        ...s,
+        totalUsers: allUsers.length
+      });
+      setUserList(allUsers);
       setJobsList(j || []);
       setAuditLogs(a || []);
       setPendingProjects(projSnap.docs.map(d => ({ id: d.id, ...d.data() })));
@@ -117,7 +127,7 @@ export default function AdminPage() {
       setJobCompany('');
       setJobDesc('');
       setJobApplyUrl('');
-      showToast(`Published opportunity: "${jobTitle}" at ${jobCompany}`);
+      showToast(\`Published opportunity: "\${jobTitle}" at \${jobCompany}\`);
       loadAdminData();
     } catch (err) {
       showToast('Failed to publish opportunity', 'error');
@@ -138,45 +148,46 @@ export default function AdminPage() {
   const handleVerifyProject = async (projId, currentStatus) => {
     const nextStatus = currentStatus === 'verified' ? 'unverified' : 'verified';
     try {
-      await updateProject(projId, {
-        verificationStatus: nextStatus,
-        verificationScore: nextStatus === 'verified' ? 95 : 0
-      });
+      await updateProject(projId, { verificationStatus: nextStatus });
       await logAuditEvent(firebaseUser, 'VERIFY_PROJECT', 'project', projId, { newStatus: nextStatus });
-      setPendingProjects(prev => prev.map(p => p.id === projId ? { ...p, verificationStatus: nextStatus, verificationScore: nextStatus === 'verified' ? 95 : 0 } : p));
-      showToast(`Project marked as ${nextStatus}! 🛡️`);
+      setPendingProjects(prev => prev.map(p => p.id === projId ? { ...p, verificationStatus: nextStatus } : p));
+      showToast(\`Project marked as \${nextStatus}.\`);
     } catch (err) {
       showToast('Failed to update project status', 'error');
     }
   };
 
+  const filteredUsers = userList.filter(u => {
+    if (!userSearchTerm) return true;
+    const term = userSearchTerm.toLowerCase();
+    return (
+      (u.displayName && u.displayName.toLowerCase().includes(term)) ||
+      (u.email && u.email.toLowerCase().includes(term)) ||
+      (u.username && u.username.toLowerCase().includes(term)) ||
+      (u.college && u.college.toLowerCase().includes(term)) ||
+      (u.careerGoal && u.careerGoal.toLowerCase().includes(term))
+    );
+  });
+
   return (
-    <div className="admin-page" style={{ paddingBottom: '60px' }}>
+    <div className="admin-operations-page" style={{ paddingBottom: '60px' }}>
       
       {/* 1. HEADER */}
       <PageHeader 
-        badge="Enterprise Control"
-        title="Admin Command Center"
-        description="System telemetry, verified user directory, opportunity publisher, and evidence audit log."
-        action={
-          <button 
-            onClick={() => setShowJobModal(true)}
-            className="btn btn-primary btn-sm"
-          >
-            <Plus size={14} /> Publish Opportunity
-          </button>
-        }
+        badge="Executive Console"
+        title="Admin & Operations Command"
+        description="Platform-wide telemetry, user directory, project verification, and opportunity dispatch."
       />
 
-      {/* 2. ADMIN TABS */}
-      <div style={{ marginBottom: '24px' }}>
+      {/* 2. NAVIGATION TABS */}
+      <div className="glass-card" style={{ padding: '16px 20px', marginBottom: '24px' }}>
         <div className="nav-tabs">
           {[
-            { key: 'analytics', label: 'Overview', icon: Activity },
-            { key: 'users', label: `Users (${userList.length})`, icon: Users },
-            { key: 'jobs', label: `Jobs (${jobsList.length})`, icon: Briefcase },
-            { key: 'reviews', label: `Projects (${pendingProjects.length})`, icon: FolderGit2 },
-            { key: 'audit', label: 'Audit Logs', icon: ShieldCheck }
+            { key: 'analytics', label: 'Telemetry & Analytics', icon: Activity },
+            { key: 'users', label: `Registered Engineers (${userList.length})`, icon: Users },
+            { key: 'jobs', label: `Opportunities (${jobsList.length})`, icon: Briefcase },
+            { key: 'reviews', label: `Project Verification (${pendingProjects.length})`, icon: FolderGit2 },
+            { key: 'audit', label: 'Security Audit Log', icon: ShieldCheck }
           ].map(t => {
             const Icon = t.icon;
             return (
@@ -185,43 +196,83 @@ export default function AdminPage() {
                 onClick={() => setActiveTab(t.key)}
                 className={`nav-tab ${activeTab === t.key ? 'active' : ''}`}
               >
-                <Icon size={14} />
-                <span>{t.label}</span>
+                <Icon size={14} /> {t.label}
               </button>
             );
           })}
         </div>
       </div>
 
-      {/* 3. TAB 1: ANALYTICS & TELEMETRY */}
+      {/* TAB 1: TELEMETRY & STATS */}
       {activeTab === 'analytics' && (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
-          <div className="grid-4">
-            <StatCard title="Active Engineers" value={stats.totalUsers || userList.length} subtitle="Registered Students" icon={Users} color="var(--primary)" />
-            <StatCard title="Engineering Projects" value={stats.totalProjects || pendingProjects.length} subtitle="Proof-of-work workspaces" icon={FolderGit2} color="var(--secondary)" />
-            <StatCard title="Open Roles" value={stats.totalJobs || jobsList.length} subtitle="Published in Marketplace" icon={Briefcase} color="var(--emerald)" />
-            <StatCard title="Interview Loops" value={stats.totalInterviews || 0} subtitle="AI evaluated sessions" icon={Bot} color="var(--amber)" />
+        <div>
+          <div className="grid-4" style={{ marginBottom: '24px' }}>
+            <StatCard title="Active Engineers" value={stats.totalUsers || userList.length} subtitle="Firestore Users" icon={Users} color="var(--primary)" />
+            <StatCard title="Engineering Projects" value={stats.totalProjects || pendingProjects.length} subtitle="Proof Workspaces" icon={FolderGit2} color="var(--secondary)" />
+            <StatCard title="Open Roles" value={stats.totalJobs || jobsList.length} subtitle="In Marketplace" icon={Briefcase} color="var(--emerald)" />
+            <StatCard title="Interview Sessions" value={stats.totalInterviews || 0} subtitle="AI Evaluated" icon={Bot} color="var(--amber)" />
           </div>
         </div>
       )}
 
-      {/* TAB 2: USERS DIRECTORY */}
+      {/* TAB 2: FULL USERS DIRECTORY */}
       {activeTab === 'users' && (
         <div className="glass-card" style={{ padding: '24px' }}>
-          <h3 style={{ fontSize: '1.2rem', fontWeight: '800', marginBottom: '16px' }}>Registered Students & Engineers</h3>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px', flexWrap: 'wrap', gap: '12px' }}>
+            <div>
+              <h3 style={{ fontSize: '1.25rem', fontWeight: '800', margin: 0 }}>
+                Registered Students & Engineers ({filteredUsers.length})
+              </h3>
+              <p style={{ fontSize: '0.8rem', color: 'var(--text-muted)', margin: 0 }}>
+                Real data stored in Firestore from user onboarding and profile updates.
+              </p>
+            </div>
+
+            <div style={{ display: 'flex', alignItems: 'center', background: 'rgba(15, 23, 42, 0.8)', border: '1px solid var(--border-medium)', borderRadius: 'var(--radius-md)', padding: '0 12px', width: '280px' }}>
+              <Search size={16} color="var(--text-muted)" style={{ marginRight: '8px' }} />
+              <input 
+                type="text"
+                placeholder="Search by name, email, handle, college..."
+                value={userSearchTerm}
+                onChange={(e) => setUserSearchTerm(e.target.value)}
+                style={{ width: '100%', background: 'transparent', border: 'none', color: '#fff', padding: '8px 0', outline: 'none', fontSize: '0.85rem' }}
+              />
+            </div>
+          </div>
+
           <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
-            {userList.map(u => (
-              <div key={u.id || u.uid} style={{ background: 'rgba(15, 23, 42, 0.7)', padding: '14px', borderRadius: 'var(--radius-md)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-                  <UserAvatar name={u.displayName} photoURL={u.photoURL} size={42} />
+            {filteredUsers.map(u => (
+              <div key={u.id || u.uid} className="glass-card" style={{ padding: '16px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '14px' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '14px' }}>
+                  <UserAvatar name={u.displayName} photoURL={u.photoURL} size={46} />
                   <div>
-                    <div style={{ fontWeight: '800', fontSize: '0.92rem', color: '#fff' }}>{u.displayName}</div>
-                    <div style={{ fontSize: '0.78rem', color: 'var(--text-muted)' }}>@{u.username} · {u.college || 'Institution'}</div>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                      <span style={{ fontWeight: '800', fontSize: '0.98rem', color: '#fff' }}>{u.displayName || 'Unnamed User'}</span>
+                      {u.username && <span style={{ fontSize: '0.78rem', color: 'var(--primary)', fontWeight: '700' }}>@{u.username}</span>}
+                      {u.profileCompleted ? (
+                        <span className="badge badge-success" style={{ fontSize: '0.68rem' }}>Onboarded</span>
+                      ) : (
+                        <span className="badge badge-neutral" style={{ fontSize: '0.68rem' }}>Pending Onboarding</span>
+                      )}
+                    </div>
+                    <div style={{ fontSize: '0.8rem', color: 'var(--text-body)', marginTop: '2px' }}>
+                      {u.email} · {u.college || 'Institution not specified'} · <strong style={{ color: 'var(--secondary)' }}>{u.careerGoal || 'Engineer'}</strong>
+                    </div>
+                    {u.skills && u.skills.length > 0 && (
+                      <div style={{ display: 'flex', gap: '4px', marginTop: '6px', flexWrap: 'wrap' }}>
+                        {u.skills.slice(0, 5).map(sk => (
+                          <span key={sk} className="badge badge-neutral" style={{ fontSize: '0.68rem' }}>{sk}</span>
+                        ))}
+                      </div>
+                    )}
                   </div>
                 </div>
-                <Link to={`/u/${u.username || ''}`} className="btn btn-secondary btn-sm">
-                  View Profile
-                </Link>
+
+                {u.username && (
+                  <Link to={`/u/${u.username}`} target="_blank" className="btn btn-secondary btn-sm">
+                    <ExternalLink size={13} /> View Passport
+                  </Link>
+                )}
               </div>
             ))}
           </div>
@@ -232,18 +283,18 @@ export default function AdminPage() {
       {activeTab === 'jobs' && (
         <div className="glass-card" style={{ padding: '24px' }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
-            <h3 style={{ fontSize: '1.2rem', fontWeight: '800' }}>Active Marketplace Opportunities</h3>
+            <h3 style={{ fontSize: '1.2rem', fontWeight: '800' }}>Active Marketplace Opportunities ({jobsList.length})</h3>
             <button onClick={() => setShowJobModal(true)} className="btn btn-primary btn-sm">
-              <Plus size={14} /> Add Role
+              <Plus size={14} /> Publish Role
             </button>
           </div>
 
           <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
             {jobsList.map(j => (
-              <div key={j.id} style={{ background: 'rgba(15, 23, 42, 0.7)', padding: '14px', borderRadius: 'var(--radius-md)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <div key={j.id} style={{ background: 'rgba(15, 23, 42, 0.7)', padding: '14px 18px', borderRadius: 'var(--radius-md)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                 <div>
                   <div style={{ fontWeight: '800', fontSize: '0.95rem', color: '#fff' }}>{j.title}</div>
-                  <div style={{ fontSize: '0.8rem', color: 'var(--secondary)' }}>{j.company} · {j.location} · {j.type}</div>
+                  <div style={{ fontSize: '0.8rem', color: 'var(--secondary)', marginTop: '2px' }}>{j.company} · {j.location} · {j.type}</div>
                 </div>
                 <button onClick={() => handleDeleteJob(j.id, j.title)} className="btn btn-danger btn-sm">
                   <Trash2 size={13} /> Delete
@@ -257,26 +308,27 @@ export default function AdminPage() {
       {/* TAB 4: PROJECTS VERIFICATION */}
       {activeTab === 'reviews' && (
         <div className="glass-card" style={{ padding: '24px' }}>
-          <h3 style={{ fontSize: '1.2rem', fontWeight: '800', marginBottom: '16px' }}>Project Verification Queue</h3>
+          <h3 style={{ fontSize: '1.2rem', fontWeight: '800', marginBottom: '16px' }}>Project Verification Queue ({pendingProjects.length})</h3>
           <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-            {pendingProjects.map(p => (
-              <div key={p.id} style={{ background: 'rgba(15, 23, 42, 0.7)', padding: '16px', borderRadius: 'var(--radius-md)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            {pendingProjects.map(proj => (
+              <div key={proj.id} style={{ background: 'rgba(15, 23, 42, 0.7)', padding: '16px', borderRadius: 'var(--radius-md)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                 <div>
                   <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                    <span style={{ fontWeight: '800', fontSize: '0.95rem', color: '#fff' }}>{p.title}</span>
-                    <span className={`badge ${p.verificationStatus === 'verified' ? 'badge-success' : 'badge-neutral'}`}>
-                      {p.verificationStatus || 'unverified'}
+                    <span style={{ fontWeight: '800', fontSize: '0.98rem', color: '#fff' }}>{proj.title}</span>
+                    <span className={`badge ${proj.verificationStatus === 'verified' ? 'badge-success' : 'badge-neutral'}`} style={{ fontSize: '0.7rem' }}>
+                      {proj.verificationStatus === 'verified' ? '✓ Verified' : 'Unverified'}
                     </span>
                   </div>
-                  <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)', marginTop: '2px' }}>
-                    {p.techStack?.join(', ')} · Owner: {p.ownerName || p.ownerId}
+                  <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)', marginTop: '4px' }}>
+                    Stack: {proj.techStack?.join(', ')} · Repo: {proj.githubRepo || 'No repo'}
                   </div>
                 </div>
+
                 <button 
-                  onClick={() => handleVerifyProject(p.id, p.verificationStatus)}
-                  className={`btn btn-sm ${p.verificationStatus === 'verified' ? 'btn-outline' : 'btn-primary'}`}
+                  onClick={() => handleVerifyProject(proj.id, proj.verificationStatus)}
+                  className={`btn btn-sm ${proj.verificationStatus === 'verified' ? 'btn-outline' : 'btn-primary'}`}
                 >
-                  {p.verificationStatus === 'verified' ? 'Revoke Verification' : 'Verify Project'}
+                  {proj.verificationStatus === 'verified' ? 'Revoke Verification' : 'Verify Project Evidence'}
                 </button>
               </div>
             ))}
@@ -284,22 +336,18 @@ export default function AdminPage() {
         </div>
       )}
 
-      {/* TAB 5: AUDIT LOGS */}
+      {/* TAB 5: SECURITY AUDIT LOG */}
       {activeTab === 'audit' && (
         <div className="glass-card" style={{ padding: '24px' }}>
           <h3 style={{ fontSize: '1.2rem', fontWeight: '800', marginBottom: '16px' }}>Security Audit Trail</h3>
           <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
             {auditLogs.length === 0 ? (
-              <p style={{ color: 'var(--text-muted)' }}>No audit events logged yet.</p>
+              <div style={{ color: 'var(--text-muted)', fontSize: '0.85rem' }}>No recent audit events.</div>
             ) : (
-              auditLogs.map(log => (
-                <div key={log.id} style={{ background: 'rgba(15, 23, 42, 0.6)', padding: '10px 14px', borderRadius: 'var(--radius-sm)', fontSize: '0.82rem', display: 'flex', justifyContent: 'space-between' }}>
-                  <div>
-                    <strong style={{ color: 'var(--primary)' }}>{log.action}</strong> by {log.actorEmail || log.actorUid}
-                  </div>
-                  <span style={{ color: 'var(--text-dim)' }}>
-                    {log.targetType}: {log.targetId}
-                  </span>
+              auditLogs.map(l => (
+                <div key={l.id} style={{ background: 'rgba(15, 23, 42, 0.7)', padding: '10px 14px', borderRadius: 'var(--radius-sm)', fontSize: '0.82rem', display: 'flex', justifyContent: 'space-between' }}>
+                  <span><strong style={{ color: 'var(--primary)' }}>{l.action}</strong>: {l.actorEmail || 'System'} modified {l.targetType}</span>
+                  <span style={{ color: 'var(--text-dim)' }}>{l.createdAt?.toDate ? l.createdAt.toDate().toLocaleTimeString() : 'Recent'}</span>
                 </div>
               ))
             )}
@@ -307,40 +355,27 @@ export default function AdminPage() {
         </div>
       )}
 
-      {/* JOB CREATION MODAL */}
-      <Modal 
-        isOpen={showJobModal} 
+      {/* OPPORTUNITY CREATION MODAL */}
+      <Modal
+        isOpen={showJobModal}
         onClose={() => setShowJobModal(false)}
-        title="Publish Opportunity to Marketplace"
+        title="Publish Marketplace Opportunity"
       >
         <form onSubmit={handleCreateOpportunity}>
-          <div className="form-group">
-            <label className="form-label">Role Title *</label>
-            <input 
-              type="text"
-              className="form-input"
-              required
-              placeholder="e.g. Software Engineer Intern"
-              value={jobTitle}
-              onChange={(e) => setJobTitle(e.target.value)}
-            />
-          </div>
-
-          <div className="form-group">
-            <label className="form-label">Company Name *</label>
-            <input 
-              type="text"
-              className="form-input"
-              required
-              placeholder="e.g. Stripe"
-              value={jobCompany}
-              onChange={(e) => setJobCompany(e.target.value)}
-            />
-          </div>
-
           <div className="grid-2">
             <div className="form-group">
-              <label className="form-label">Type</label>
+              <label className="form-label">Role Title *</label>
+              <input type="text" className="form-input" required placeholder="e.g. Full Stack Engineer" value={jobTitle} onChange={(e) => setJobTitle(e.target.value)} />
+            </div>
+            <div className="form-group">
+              <label className="form-label">Company Name *</label>
+              <input type="text" className="form-input" required placeholder="e.g. Stripe / Razorpay" value={jobCompany} onChange={(e) => setJobCompany(e.target.value)} />
+            </div>
+          </div>
+
+          <div className="grid-2" style={{ marginTop: '14px' }}>
+            <div className="form-group">
+              <label className="form-label">Opportunity Type</label>
               <select className="form-select" value={jobType} onChange={(e) => setJobType(e.target.value)}>
                 <option value="Internship">Internship</option>
                 <option value="Full-time">Full-time</option>
@@ -349,31 +384,34 @@ export default function AdminPage() {
             </div>
             <div className="form-group">
               <label className="form-label">Location</label>
-              <input type="text" className="form-input" placeholder="e.g. Remote" value={jobLocation} onChange={(e) => setJobLocation(e.target.value)} />
+              <input type="text" className="form-input" placeholder="e.g. Remote / Bengaluru" value={jobLocation} onChange={(e) => setJobLocation(e.target.value)} />
             </div>
           </div>
 
-          <div className="form-group">
-            <label className="form-label">Skills Required (comma separated)</label>
-            <input type="text" className="form-input" value={jobSkills} onChange={(e) => setJobSkills(e.target.value)} />
+          <div className="form-group" style={{ marginTop: '14px' }}>
+            <label className="form-label">Skills Required (Comma separated)</label>
+            <input type="text" className="form-input" placeholder="React, TypeScript, Node.js, PostgreSQL" value={jobSkills} onChange={(e) => setJobSkills(e.target.value)} />
           </div>
 
-          <div className="form-group">
+          <div className="form-group" style={{ marginTop: '14px' }}>
             <label className="form-label">Application URL</label>
-            <input type="url" className="form-input" placeholder="https://company.com/apply" value={jobApplyUrl} onChange={(e) => setJobApplyUrl(e.target.value)} />
+            <input type="url" className="form-input" placeholder="https://company.com/careers/job" value={jobApplyUrl} onChange={(e) => setJobApplyUrl(e.target.value)} />
           </div>
 
-          <div className="form-group">
-            <label className="form-label">Description</label>
-            <textarea className="form-textarea" rows={3} value={jobDesc} onChange={(e) => setJobDesc(e.target.value)} />
+          <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px', marginTop: '20px' }}>
+            <button type="button" onClick={() => setShowJobModal(false)} className="btn btn-secondary">Cancel</button>
+            <button type="submit" className="btn btn-primary">Publish Role</button>
           </div>
-
-          <button type="submit" className="btn btn-primary" style={{ width: '100%', marginTop: '8px' }}>
-            Publish Role
-          </button>
         </form>
       </Modal>
 
     </div>
   );
 }
+`;
+
+fs.writeFileSync('E:/edworldco/client/src/pages/AdminPage.jsx', adminCode, 'utf8');
+console.log('AdminPage.jsx updated successfully!');
+`;
+
+fs.writeFileSync('C:/Users/adars/.gemini/antigravity/brain/59af2ed0-1102-48fa-a5f2-e3defb203860/scratch/build_enhanced_admin.js', adminCode, 'utf8');
