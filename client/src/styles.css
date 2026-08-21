@@ -695,28 +695,30 @@ a:hover {
 .modal-overlay {
   position: fixed;
   inset: 0;
-  z-index: 1000;
-  background: rgba(4, 6, 12, 0.78);
-  backdrop-filter: blur(10px);
-  -webkit-backdrop-filter: blur(10px);
+  z-index: 3000;
+  background: rgba(4, 6, 12, 0.82);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
   display: flex;
   align-items: center;
   justify-content: center;
-  padding: 16px;
+  padding: 20px;
   animation: fadeIn 0.2s ease-out;
+  overflow-y: auto;
 }
 
 .modal-content {
   background: #0f172a;
-  border: 1px solid var(--border-medium);
+  border: 1px solid var(--border-glow);
   border-radius: var(--radius-xl);
   padding: 28px;
   max-width: 600px;
   width: 100%;
-  max-height: 90vh;
+  max-height: 88vh;
   overflow-y: auto;
-  box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.85);
-  animation: modalEnter 0.2s ease-out;
+  margin: auto;
+  box-shadow: 0 25px 60px -12px rgba(0, 0, 0, 0.95);
+  animation: modalEnter 0.2s cubic-bezier(0.16, 1, 0.3, 1);
 }
 
 /* Slide-out Drawers */
@@ -834,4 +836,28 @@ a:hover {
   .show-on-mobile {
     display: block !important;
   }
+}
+
+
+/* Sticky Sidebar & Centered Overlay Utilities */
+.sticky-sidebar {
+  position: sticky;
+  top: 84px;
+  max-height: calc(100vh - 100px);
+  overflow-y: auto;
+  align-self: flex-start;
+  scrollbar-width: thin;
+}
+
+.sticky-sidebar::-webkit-scrollbar {
+  width: 4px;
+}
+
+.sticky-sidebar::-webkit-scrollbar-thumb {
+  background: var(--border-medium);
+  border-radius: 4px;
+}
+
+.scrollable-features {
+  min-width: 0;
 }
